@@ -1,10 +1,11 @@
 //! `/v2/createsubtoken` endpoint — JWT subtoken generation.
 //!
 //! Call chain:
-//!   `client.create_subtoken(expire, permissions, urls)` → `Result<Subtoken>` (auth)
+//!   `client.createsubtoken(expire, permissions, urls)` → `Result<Subtoken>` (auth)
 
 use std::fmt;
 
+use chrono::{DateTime, SecondsFormat, Utc};
 use gw2_api_macros::gw2_endpoint;
 use serde::{Deserialize, Serialize};
 
@@ -26,11 +27,10 @@ pub struct Subtoken {
 /// - `expire`      — ISO-8601 datetime for expiry (max one year from now; clamped if exceeded).
 /// - `permissions` — Permissions to inherit; unknown or ungranted permissions are silently ignored.
 /// - `urls`        — Optional endpoint allowlist; if empty, all endpoints permitted by `permissions` are accessible.
-#[gw2_endpoint(path = "createsubtoken", auth, test_params(expire = "2100-12-31T23:59:59Z", permissions = [SubtokenPermission::Inventories], urls = ["account", "characters"],))]
+#[gw2_endpoint(path = "createsubtoken", auth, test_params(expire = ::chrono::Utc::now() + ::chrono::Duration::hours(1), permissions = [SubtokenPermission::Account], urls = ["/v2/account"],))]
 pub async fn createsubtoken(
     &self,
-    // TODO: take DateTime<Utc>; omit `permissions`/`urls` when empty.
-    expire: &str,
+    expire: DateTime<Utc>,
     permissions: impl IntoIterator<Item = SubtokenPermission>,
     urls: impl IntoIterator<Item = impl fmt::Display>,
 ) -> Result<Subtoken, Gw2ApiError> {
@@ -46,10 +46,14 @@ pub async fn createsubtoken(
         .collect::<Vec<_>>()
         .join(",");
 
-    self.request("/createsubtoken")
-        .param("expire", expire)
-        .param("permissions", permissions_str)
-        .param("urls", urls_str)
-        .send()
-        .await
+    let mut req = self
+        .request("/createsubtoken")
+        .param("expire", expire.to_rfc3339_opts(SecondsFormat::Secs, true));
+    if !permissions_str.is_empty() {
+        req = req.param("permissions", permissions_str);
+    }
+    if !urls_str.is_empty() {
+        req = req.param("urls", urls_str);
+    }
+    req.send().await
 }

@@ -4,7 +4,7 @@
 //!   `SubtokenPermission`, `TokenType`
 //!
 //! Call chain:
-//!   `client.token_info()` → `Result<TokenInfo>` (auth)
+//!   `client.tokeninfo().get()` → `Result<TokenInfo>` (auth)
 
 use chrono::{DateTime, Utc};
 use gw2_api_macros::{gw2_endpoint, gw2_enum};

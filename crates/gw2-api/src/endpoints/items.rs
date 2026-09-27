@@ -6,6 +6,9 @@ use serde_json::Value;
 
 use crate::coin::{Coin, coin_from_u32};
 use crate::common::{GameType, ItemFlag, Rarity};
+use crate::endpoints::itemstats::ItemStatId;
+use crate::endpoints::recipes::RecipeId;
+use crate::endpoints::skins::SkinId;
 
 // ── Item ──────────────────────────────────────────────────────────────────────
 
@@ -31,7 +34,7 @@ pub struct Item {
     #[serde(deserialize_with = "coin_from_u32")]
     pub vendor_value: Coin,
     #[serde(default)]
-    pub default_skin: Option<crate::endpoints::skins::SkinId>,
+    pub default_skin: Option<SkinId>,
     #[serde(default)]
     pub flags: Vec<ItemFlag>,
     #[serde(default)]
@@ -159,7 +162,7 @@ pub enum InfusionSlotFlag {
 pub struct InfixUpgrade {
     /// Itemstat id resolvable via `/v2/itemstats`.
     #[serde(default, rename = "id")]
-    pub itemstat: Option<crate::endpoints::itemstats::ItemStatId>,
+    pub itemstat: Option<ItemStatId>,
     #[serde(default)]
     pub attributes: Vec<AttributeBonus>,
     #[serde(default)]
@@ -389,14 +392,13 @@ pub struct ArmorDetails {
     pub attribute_adjustment: f64,
     #[serde(default)]
     pub infix_upgrade: Option<InfixUpgrade>,
-    #[serde(default, rename = "suffix_item_id")]
-    pub suffix_item: Option<ItemId>,
+    #[serde(default)]
+    pub suffix_item_id: Option<ItemId>,
     /// Second upgrade slot (two-handed weapons). Absent, `""` on older schemas, or an item id.
     #[serde(default, deserialize_with = "item_id_or_empty")]
     pub secondary_suffix_item_id: Option<ItemId>,
     #[serde(default)]
-    // TODO: Vec<ItemStatId>.
-    pub stat_choices: Vec<u32>,
+    pub stat_choices: Vec<ItemStatId>,
 }
 
 #[gw2_enum]
@@ -431,14 +433,12 @@ pub struct BackDetails {
     #[serde(default)]
     pub infix_upgrade: Option<InfixUpgrade>,
     #[serde(default)]
-    // TODO: Option<ItemId>, and one name across the details structs (ArmorDetails uses `suffix_item`).
-    pub suffix_item_id: Option<u32>,
+    pub suffix_item_id: Option<ItemId>,
     /// Second upgrade slot (two-handed weapons). Absent, `""` on older schemas, or an item id.
     #[serde(default, deserialize_with = "item_id_or_empty")]
     pub secondary_suffix_item_id: Option<ItemId>,
     #[serde(default)]
-    // TODO: Vec<ItemStatId>.
-    pub stat_choices: Vec<u32>,
+    pub stat_choices: Vec<ItemStatId>,
 }
 
 // ── Bag ───────────────────────────────────────────────────────────────────────
@@ -460,19 +460,16 @@ pub struct ConsumableDetails {
     pub unlock_type: Option<UnlockType>,
     // TODO: ColorId once /v2/colors is modelled.
     pub color_id: Option<u32>,
-    // TODO: Option<RecipeId>.
-    pub recipe_id: Option<u32>,
+    pub recipe_id: Option<RecipeId>,
     #[serde(default)]
-    // TODO: Vec<RecipeId>.
-    pub extra_recipe_ids: Vec<u32>,
+    pub extra_recipe_ids: Vec<RecipeId>,
     // TODO: GuildUpgradeId once /v2/guild/upgrades is modelled.
     pub guild_upgrade_id: Option<u32>,
     pub apply_count: Option<u32>,
     pub name: Option<String>,
     pub icon: Option<String>,
     #[serde(default)]
-    // TODO: Vec<SkinId>.
-    pub skins: Vec<u32>,
+    pub skins: Vec<SkinId>,
 }
 
 #[gw2_enum]
@@ -619,14 +616,12 @@ pub struct TrinketDetails {
     #[serde(default)]
     pub infix_upgrade: Option<InfixUpgrade>,
     #[serde(default)]
-    // TODO: Option<ItemId>, and one name across the details structs (ArmorDetails uses `suffix_item`).
-    pub suffix_item_id: Option<u32>,
+    pub suffix_item_id: Option<ItemId>,
     /// Second upgrade slot (two-handed weapons). Absent, `""` on older schemas, or an item id.
     #[serde(default, deserialize_with = "item_id_or_empty")]
     pub secondary_suffix_item_id: Option<ItemId>,
     #[serde(default)]
-    // TODO: Vec<ItemStatId>.
-    pub stat_choices: Vec<u32>,
+    pub stat_choices: Vec<ItemStatId>,
 }
 
 #[gw2_enum]
@@ -716,14 +711,12 @@ pub struct WeaponDetails {
     #[serde(default)]
     pub infix_upgrade: Option<InfixUpgrade>,
     #[serde(default)]
-    // TODO: Option<ItemId>, and one name across the details structs (ArmorDetails uses `suffix_item`).
-    pub suffix_item_id: Option<u32>,
+    pub suffix_item_id: Option<ItemId>,
     /// Second upgrade slot (two-handed weapons). Absent, `""` on older schemas, or an item id.
     #[serde(default, deserialize_with = "item_id_or_empty")]
     pub secondary_suffix_item_id: Option<ItemId>,
     #[serde(default)]
-    // TODO: Vec<ItemStatId>.
-    pub stat_choices: Vec<u32>,
+    pub stat_choices: Vec<ItemStatId>,
 }
 
 #[gw2_enum]

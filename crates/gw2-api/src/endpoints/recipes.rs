@@ -14,11 +14,10 @@ use crate::error::Gw2ApiError;
 #[gw2_endpoint(path = "recipes", id_type = u32, paged)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 // TODO: missing `chat_link` and `output_upgrade_id` (GuildUpgradeId, /v2/guild/upgrades).
-//       `type` should be an enum RecipeType.
 pub struct Recipe {
     pub id: RecipeId,
     #[serde(rename = "type")]
-    pub recipe_type: String,
+    pub recipe_type: RecipeType,
     #[serde(rename = "output_item_id")]
     pub output_item: ItemId,
     pub output_item_count: u32,
@@ -59,6 +58,73 @@ impl Ingredient {
             Self::Unknown { .. } => None,
         }
     }
+}
+
+/// What a recipe produces. Values from the wiki; all live values are covered.
+#[gw2_enum]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum RecipeType {
+    // Weapons
+    Axe,
+    Dagger,
+    Focus,
+    Greatsword,
+    Hammer,
+    Harpoon,
+    LongBow,
+    Mace,
+    Pistol,
+    Rifle,
+    Scepter,
+    Shield,
+    ShortBow,
+    Speargun,
+    Staff,
+    Sword,
+    Torch,
+    Trident,
+    Warhorn,
+    // Armor
+    Boots,
+    Coat,
+    Gloves,
+    Helm,
+    Leggings,
+    Shoulders,
+    // Trinkets
+    Amulet,
+    Earring,
+    Ring,
+    // Food
+    Dessert,
+    Feast,
+    Food,
+    IngredientCooking,
+    Meal,
+    Seasoning,
+    Snack,
+    Soup,
+    // Crafting components
+    Component,
+    Inscription,
+    Insignia,
+    LegendaryComponent,
+    // Refinement
+    Refinement,
+    RefinementEctoplasm,
+    RefinementObsidian,
+    // Guild
+    GuildConsumable,
+    GuildConsumableWvw,
+    GuildDecoration,
+    // Other
+    Backpack,
+    Bag,
+    Bulk,
+    Consumable,
+    Dye,
+    Potion,
+    UpgradeComponent,
 }
 
 #[gw2_enum]

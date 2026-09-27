@@ -7,12 +7,14 @@
 //!   `"account/materials"`    → `MaterialsEndpoint`        (`account.materials()`)      (auth)
 //!   `"account/achievements"` → `AccountAchievementsEndpoint` (`account.achievements()`) (auth)
 
+use chrono::{DateTime, Utc};
 use gw2_api_macros::{gw2_endpoint, gw2_enum};
 use serde::{Deserialize, Serialize};
 
 use crate::endpoints::achievements::AchievementId;
 use crate::endpoints::currencies::CurrencyId;
 use crate::endpoints::items::ItemId;
+use crate::endpoints::skins::SkinId;
 
 // ── Account singleton ─────────────────────────────────────────────────────────
 
@@ -33,8 +35,7 @@ pub struct Account {
     /// Requires the `guilds` scope; `None` without it.
     #[serde(default)]
     pub guild_leader: Option<Vec<String>>,
-    // TODO: DateTime<Utc> (also `last_modified`).
-    pub created: String,
+    pub created: DateTime<Utc>,
     #[serde(default)]
     pub access: Vec<AccountAccess>,
     pub commander: bool,
@@ -52,7 +53,7 @@ pub struct Account {
     #[serde(default)]
     pub wvw: Option<AccountWvw>,
     #[serde(default)]
-    pub last_modified: Option<String>,
+    pub last_modified: Option<DateTime<Utc>>,
     #[serde(default)]
     pub build_storage_slots: Option<u32>,
 }
@@ -88,6 +89,14 @@ pub enum AccountAccess {
     JanthirWilds,
 }
 
+/// What an item in the bank or material storage is bound to.
+#[gw2_enum]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Binding {
+    Account,
+    Character,
+}
+
 // ── Account sub-collections ───────────────────────────────────────────────────
 
 /// Wallet currency entry. GET /v2/account/wallet returns Vec<WalletEntry>.
@@ -111,11 +120,9 @@ pub struct BankSlot {
     #[serde(default)]
     pub charges: Option<u32>,
     #[serde(default)]
-    // TODO: Option<SkinId>.
-    pub skin: Option<u32>,
+    pub skin: Option<SkinId>,
     #[serde(default)]
-    // TODO: enum Binding { Account, Character }.
-    pub binding: Option<String>,
+    pub binding: Option<Binding>,
 }
 
 /// Material storage entry. GET /v2/account/materials returns Vec<MaterialEntry>.
@@ -128,8 +135,7 @@ pub struct MaterialEntry {
     pub category: u32,
     pub count: u32,
     #[serde(default)]
-    // TODO: enum Binding { Account, Character }.
-    pub binding: Option<String>,
+    pub binding: Option<Binding>,
 }
 
 /// Player's progress on an achievement. GET /v2/account/achievements returns Vec<AccountAchievement>.

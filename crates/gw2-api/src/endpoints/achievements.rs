@@ -8,6 +8,7 @@
 use gw2_api_macros::{gw2_endpoint, gw2_enum, gw2_tagged_union};
 use serde::{Deserialize, Serialize};
 
+use crate::coin::Coin;
 use crate::endpoints::items::ItemId;
 use crate::endpoints::minis::MiniId;
 use crate::endpoints::skins::SkinId;
@@ -76,15 +77,36 @@ pub struct AchievementTier {
     pub points: u32,
 }
 
+/// Region of a mastery point reward.
+#[gw2_enum]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum MasteryRegion {
+    /// Core Tyria.
+    Tyria,
+    /// Heart of Thorns.
+    Maguuma,
+    /// Path of Fire.
+    Desert,
+    /// Icebrood Saga.
+    Tundra,
+    /// End of Dragons.
+    Jade,
+    /// Secrets of the Obscure.
+    Sky,
+    /// Janthir Wilds.
+    Wild,
+    /// Visions of Eternity.
+    Magic,
+}
+
 #[gw2_tagged_union]
 #[derive(Debug, Clone, Serialize)]
 pub enum AchievementReward {
-    Coins { count: u32 },
+    Coins { count: Coin },
     Item { id: ItemId, count: u32 },
-    // TODO: `id` is a mastery point id, only resolvable via /v2/account/mastery/points;
-    //       `region` should be an enum (Tyria, Maguuma, Desert, Tundra, Jade, Sky, Wild, Magic).
-    Mastery { id: u32, region: String },
-    // TODO: TitleId once /v2/titles is modelled. `Coins.count` could be `Coin`.
+    // TODO: `id` is a mastery point id, only resolvable via /v2/account/mastery/points.
+    Mastery { id: u32, region: MasteryRegion },
+    // TODO: TitleId once /v2/titles is modelled.
     Title { id: u32 },
     Unknown { type_: String },
 }

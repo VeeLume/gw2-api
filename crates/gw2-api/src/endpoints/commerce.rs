@@ -12,6 +12,7 @@
 //!   `.transactions().history().buys()` → `Result<Vec<Transaction>>`
 //!   `.transactions().history().sells()`→ `Result<Vec<Transaction>>`
 
+use chrono::{DateTime, Utc};
 use gw2_api_macros::gw2_endpoint;
 use serde::{Deserialize, Serialize};
 
@@ -113,10 +114,10 @@ pub struct Transaction {
     pub item_id: ItemId,
     pub price: Coin,
     pub quantity: u32,
-    // TODO: DateTime<Utc> (also `purchased`).
-    pub created: String,
+    pub created: DateTime<Utc>,
     #[serde(default)]
-    pub purchased: Option<String>,
+    /// When the order was filled; absent on current (open) orders.
+    pub purchased: Option<DateTime<Utc>>,
 }
 
 // ── Namespace handles ─────────────────────────────────────────────────────────

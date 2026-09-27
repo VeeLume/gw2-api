@@ -5,8 +5,10 @@
 //!   `"mounts/types"` → `TypesEndpoint`  (`mounts.types()`)
 //!   `"mounts/skins"` → `SkinsEndpoint`  (`mounts.skins()`)
 
-use gw2_api_macros::gw2_endpoint;
+use gw2_api_macros::{gw2_endpoint, gw2_enum};
 use serde::{Deserialize, Serialize};
+
+use crate::endpoints::skills::{SkillId, SkillSlot};
 
 /// Handle for all `/v2/mounts/*` sub-endpoints. Access via `client.mounts()`.
 #[gw2_endpoint(path = "mounts", namespace)]
@@ -29,10 +31,8 @@ pub struct MountType {
 /// One skill slot of a mount type.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MountSkill {
-    // TODO: SkillId.
-    pub id: u32,
-    // TODO: an enum (SkillSlot, shared with /v2/skills).
-    pub slot: String,
+    pub id: SkillId,
+    pub slot: SkillSlot,
 }
 
 /// A mount skin. From `/v2/mounts/skins`.
@@ -53,6 +53,15 @@ pub struct MountSkin {
 pub struct MountDyeSlot {
     // TODO: ColorId once /v2/colors is modelled.
     pub color_id: u32,
-    // TODO: enum DyeMaterial { cloth, fur, leather, metal } (lowercase in JSON).
-    pub material: String,
+    pub material: DyeMaterial,
+}
+
+/// Material a dye channel is applied to. Lowercase in JSON; not listed on the wiki.
+#[gw2_enum(lowercase)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum DyeMaterial {
+    Cloth,
+    Fur,
+    Leather,
+    Metal,
 }
