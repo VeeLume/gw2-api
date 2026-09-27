@@ -1,0 +1,158 @@
+{
+  // ── New endpoint file ─────────────────────────────────────────────────────
+  // Trigger: gw2file
+  // Full boilerplate for a new endpoints/*.rs file with one resource type.
+  "GW2 new endpoint file": {
+    "scope": "rust",
+    "prefix": "gw2file",
+    "description": "New endpoints/*.rs file for a gw2_endpoint resource",
+    "body": [
+      "//! `/v2/${2:api/path}` endpoint — types, IDs, and endpoint handle.",
+      "",
+      "use gw2_api_macros::{gw2_endpoint, gw2_enum};",
+      "use serde::{Deserialize, Serialize};",
+      "",
+      "// ── Types ─────────────────────────────────────────────────────────────────────",
+      "",
+      "/// A GW2 ${3:TypeName}.",
+      "#[gw2_endpoint(path = \"${2:api/path}\", id_type = u32, paged)]",
+      "#[derive(Debug, Clone, Serialize, Deserialize)]",
+      "pub struct ${3:TypeName} {",
+      "    pub id: ${3:TypeName}Id,",
+      "    $0",
+      "}"
+    ]
+  },
+  // ── #[gw2_endpoint] — bulk/paged resource ────────────────────────────────
+  // Trigger: gw2res
+  // Annotated struct for a bulk/paged resource endpoint (e.g. /v2/items).
+  // id_type = u32 generates a TypeNameId newtype automatically (no resource_id! needed).
+  // Add paged to implement PagedResource (enables page-based iteration).
+  "GW2 resource endpoint": {
+    "scope": "rust",
+    "prefix": "gw2res",
+    "description": "#[gw2_endpoint] struct for a paged bulk resource endpoint",
+    "body": [
+      "/// A GW2 ${2:TypeName}.",
+      "#[gw2_endpoint(path = \"${1:api/path}\", id_type = u32, paged)]",
+      "#[derive(Debug, Clone, Serialize, Deserialize)]",
+      "pub struct ${2:TypeName} {",
+      "    pub id: ${2:TypeName}Id,",
+      "    $0",
+      "}"
+    ]
+  },
+  // ── #[gw2_endpoint] — singleton ──────────────────────────────────────────
+  // Trigger: gw2single
+  // Annotated struct for a singleton endpoint (e.g. /v2/account, /v2/tokeninfo).
+  // Omit auth flag for public singletons (e.g. /v2/build).
+  "GW2 singleton endpoint": {
+    "scope": "rust",
+    "prefix": "gw2single",
+    "description": "#[gw2_endpoint] struct for a fixed-URL singleton endpoint",
+    "body": [
+      "/// ${2:TypeName} from `/v2/${1:api/path}`${3: (auth required)}.",
+      "#[gw2_endpoint(path = \"${1:api/path}\"${4:, auth})]",
+      "#[derive(Debug, Clone, Serialize, Deserialize)]",
+      "pub struct ${2:TypeName} {",
+      "    $0",
+      "}"
+    ]
+  },
+  // ── #[gw2_endpoint] — collection ─────────────────────────────────────────
+  // Trigger: gw2col
+  // Struct for an endpoint that returns Vec<T> at a fixed URL
+  // (e.g. /v2/account/wallet, /v2/account/materials).
+  // Use nullable flag to get Vec<Option<T>> (e.g. /v2/account/bank).
+  "GW2 collection endpoint": {
+    "scope": "rust",
+    "prefix": "gw2col",
+    "description": "#[gw2_endpoint] struct for a Vec<T> collection endpoint",
+    "body": [
+      "/// Item returned by `GET /v2/${1:api/path}`.",
+      "#[gw2_endpoint(path = \"${1:api/path}\", ${2|collection,collection\\, nullable|}${3:, auth})]",
+      "#[derive(Debug, Clone, Serialize, Deserialize)]",
+      "pub struct ${4:TypeName} {",
+      "    $0",
+      "}"
+    ]
+  },
+  // ── #[gw2_endpoint] — namespace ──────────────────────────────────────────
+  // Trigger: gw2ns
+  // Navigation-only handle with no direct .get() — sub-endpoints hang off it.
+  // (e.g. CommerceEndpoint, TransactionsEndpoint).
+  // no_registry suppresses the registry entry for the namespace itself.
+  "GW2 namespace endpoint": {
+    "scope": "rust",
+    "prefix": "gw2ns",
+    "description": "#[gw2_endpoint] namespace handle (navigation only, no .get())",
+    "body": [
+      "/// Navigation handle for `/v2/${1:api/path}` sub-endpoints.",
+      "#[gw2_endpoint(path = \"${1:api/path}\", namespace${2:, no_registry})]",
+      "pub struct ${3:TypeName}Endpoint<'c>;"
+    ]
+  },
+  // ── #[gw2_enum] ──────────────────────────────────────────────────────────
+  // Trigger: gw2enum
+  // Flat string enum with Unknown(String) catch-all. Do NOT add Serialize/Deserialize
+  // to the derive list — the macro generates them automatically.
+  "GW2 string enum": {
+    "scope": "rust",
+    "prefix": "gw2enum",
+    "description": "#[gw2_enum] flat string enum with Unknown(String) catch-all",
+    "body": [
+      "#[gw2_enum]",
+      "#[derive(Debug, Clone, PartialEq, Eq, Hash)]",
+      "pub enum ${1:EnumName} {",
+      "    ${2:VariantA},",
+      "    ${3:VariantB},",
+      "    $0",
+      "}"
+    ]
+  },
+  // ── #[gw2_tagged_union] ──────────────────────────────────────────────────
+  // Trigger: gw2union
+  // Tagged-union enum dispatched on a "type" JSON field. The macro generates
+  // Deserialize. Add Serialize to the derive list manually if needed.
+  // Unknown { type_: String } is the required catch-all variant.
+  "GW2 tagged union enum": {
+    "scope": "rust",
+    "prefix": "gw2union",
+    "description": "#[gw2_tagged_union] enum dispatched on the JSON \"type\" field",
+    "body": [
+      "#[gw2_tagged_union]",
+      "#[derive(Debug, Clone, Serialize)]",
+      "pub enum ${1:EnumName} {",
+      "    /// Known variant — tuple form reuses an existing detail struct.",
+      "    ${2:Variant}(${3:DetailsStruct}),",
+      "    /// Named-field variant — fields extracted directly from the JSON object.",
+      "    // ${4:OtherVariant} { ${5:field}: ${6:Type} },",
+      "    /// Catch-all for future/unknown type strings.",
+      "    Unknown { type_: String },",
+      "}"
+    ]
+  },
+  // ── #[gw2_endpoint] on async fn ──────────────────────────────────────────
+  // Trigger: gw2method
+  // Free async fn attached to an endpoint handle via path inference.
+  // Path second-to-last segment → endpoint struct
+  //   e.g. "commerce/exchange/coins" → ExchangeEndpoint.
+  // Optional args: auth, manifest_path (when GW2 API path differs from request URL),
+  //                test_params(key = expr), test_query_keys(param = "api_key").
+  "GW2 endpoint method": {
+    "scope": "rust",
+    "prefix": "gw2method",
+    "description": "#[gw2_endpoint] free async fn attached to an endpoint handle",
+    "body": [
+      "/// ${4:Description}.",
+      "#[gw2_endpoint(path = \"${1:parent/endpoint/method}\"${2:, auth}${3:, test_params(${5:param} = ${6:value})})]",
+      "pub async fn ${7:method_name}(&self${8:, ${5:param}: ${9:Type}}) -> Result<${10:ReturnType}, Gw2ApiError> {",
+      "    self.0",
+      "        .request(\"${1:parent/endpoint/method}\")",
+      "        ${11:.param(\"${5:param}\", ${5:param})}",
+      "        .send()",
+      "        .await",
+      "}"
+    ]
+  }
+}

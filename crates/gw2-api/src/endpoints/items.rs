@@ -1,0 +1,819 @@
+//! `/v2/items` endpoint — types, IDs, and endpoint handle.
+
+use gw2_api_macros::{gw2_endpoint, gw2_enum};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+use crate::coin::{Coin, coin_from_u32};
+use crate::common::{GameType, ItemFlag, Rarity};
+
+// ── Item ──────────────────────────────────────────────────────────────────────
+
+/// A GW2 item.
+#[gw2_endpoint(path = "items", id_type = u32, paged)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Item {
+    pub id: ItemId,
+    pub chat_link: String,
+    pub name: String,
+    pub icon: Option<String>,
+    pub description: Option<String>,
+    #[serde(rename = "type")]
+    pub item_type: ItemType,
+    pub rarity: Rarity,
+    pub level: u32,
+    #[serde(deserialize_with = "coin_from_u32")]
+    pub vendor_value: Coin,
+    #[serde(default)]
+    pub default_skin: Option<crate::endpoints::skins::SkinId>,
+    #[serde(default)]
+    pub flags: Vec<ItemFlag>,
+    #[serde(default)]
+    pub game_types: Vec<GameType>,
+    #[serde(default)]
+    pub restrictions: Vec<ItemRestriction>,
+    #[serde(default)]
+    pub upgrades_into: Vec<ItemUpgrade>,
+    #[serde(default)]
+    pub upgrades_from: Vec<ItemUpgrade>,
+    /// Type-specific details, keyed by `item_type`.
+    #[serde(default)]
+    pub details: Option<ItemDetails>,
+}
+
+/// Item type discriminator (from the item's top-level `"type"` field).
+#[gw2_enum]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ItemType {
+    Armor,
+    Back,
+    Bag,
+    Consumable,
+    Container,
+    CraftingMaterial,
+    Gathering,
+    Gizmo,
+    JadeTechModule,
+    Key,
+    MiniPet,
+    PowerCore,
+    Relic,
+    SensoryArray,
+    ServiceChip,
+    Tool,
+    Trait,
+    Trinket,
+    Trophy,
+    UpgradeComponent,
+    Weapon,
+}
+
+/// Race/profession restrictions on an item.
+#[gw2_enum]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ItemRestriction {
+    Asura,
+    Charr,
+    Female,
+    Human,
+    Norn,
+    Revenant,
+    Sylvari,
+    Elementalist,
+    Engineer,
+    Guardian,
+    Mesmer,
+    Necromancer,
+    Ranger,
+    Thief,
+    Warrior,
+}
+
+/// How an item can be upgraded into another.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ItemUpgrade {
+    pub upgrade: UpgradeMethod,
+    #[serde(rename = "item_id")]
+    pub item: ItemId,
+}
+
+#[gw2_enum]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum UpgradeMethod {
+    Attunement,
+    Infusion,
+}
+
+// ── Subobjects ────────────────────────────────────────────────────────────────
+
+/// An infusion slot on gear.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InfusionSlot {
+    #[serde(default)]
+    pub flags: Vec<InfusionSlotFlag>,
+    #[serde(default, rename = "item_id")]
+    pub item: Option<ItemId>,
+}
+
+#[gw2_enum]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum InfusionSlotFlag {
+    Enrichment,
+    Infusion,
+}
+
+/// Infix upgrade — stat bonuses applied by an upgrade component.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InfixUpgrade {
+    /// Itemstat id resolvable via `/v2/itemstats`.
+    #[serde(default, rename = "id")]
+    pub itemstat: Option<crate::endpoints::itemstats::ItemStatId>,
+    #[serde(default)]
+    pub attributes: Vec<AttributeBonus>,
+    #[serde(default)]
+    pub buff: Option<InfixBuff>,
+}
+
+/// A single attribute bonus within an infix upgrade.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AttributeBonus {
+    pub attribute: AttributeType,
+    pub modifier: i32,
+}
+
+#[gw2_enum]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum AttributeType {
+    AgonyResistance,
+    BoonDuration,
+    ConditionDamage,
+    ConditionDuration,
+    CritDamage,
+    Healing,
+    Power,
+    Precision,
+    Toughness,
+    Vitality,
+}
+
+/// Additional buff effect in an infix upgrade.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InfixBuff {
+    #[serde(default, rename = "skill_id")]
+    pub skill: Option<crate::endpoints::skills::SkillId>,
+    pub description: Option<String>,
+}
+
+// ── ItemDetails ───────────────────────────────────────────────────────────────
+
+/// Type-specific item details.
+///
+/// Serialized as `{"type":"<subtype>", ...}` within the `details` JSON object.
+/// The outer item `"type"` field (e.g. `"Weapon"`, `"Armor"`) selects which
+/// variant to use; the inner `"type"` field carries the sub-discriminator
+/// (e.g. `"LongBow"`, `"Coat"`).
+///
+/// Since serde cannot propagate the outer `item_type` into deserialization of
+/// `details`, this type implements `Deserialize` manually: each variant's inner
+/// struct reads the `"type"` field itself.
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+pub enum ItemDetails {
+    Armor(ArmorDetails),
+    Back(BackDetails),
+    Bag(BagDetails),
+    Consumable(ConsumableDetails),
+    Container(ContainerDetails),
+    Gathering(GatheringDetails),
+    Gizmo(GizmoDetails),
+    MiniPet(MiniPetDetails),
+    Tool(ToolDetails),
+    Trinket(TrinketDetails),
+    UpgradeComponent(UpgradeComponentDetails),
+    Weapon(WeaponDetails),
+    /// An unrecognised detail object returned by the API.
+    Unknown(Value),
+}
+
+impl<'de> Deserialize<'de> for ItemDetails {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = Value::deserialize(d)?;
+
+        // Dispatch on the inner "type" field value, which identifies the sub-type
+        // within each item category. Types with no inner "type" field are detected
+        // by their unique required fields.
+        let type_str = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
+
+        match type_str {
+            // Armor slots
+            "Boots" | "Coat" | "Gloves" | "Helm" | "HelmAquatic" | "Leggings" | "Shoulders" => {
+                serde_json::from_value::<ArmorDetails>(v)
+                    .map(ItemDetails::Armor)
+                    .map_err(serde::de::Error::custom)
+            }
+            // Weapon types (one-handed, two-handed, aquatic, other)
+            "Axe" | "Dagger" | "Focus" | "Greatsword" | "Hammer" | "Harpoon" | "LargeBundle"
+            | "LongBow" | "Mace" | "Pistol" | "Rifle" | "Scepter" | "Shield" | "ShortBow"
+            | "SmallBundle" | "Speargun" | "Staff" | "Sword" | "Torch" | "Toy" | "ToyTwoHanded"
+            | "Trident" | "Warhorn" => serde_json::from_value::<WeaponDetails>(v)
+                .map(ItemDetails::Weapon)
+                .map_err(serde::de::Error::custom),
+            // Consumable sub-types
+            "AppearanceChange" | "Booze" | "ContractNpc" | "Currency" | "Food" | "Generic"
+            | "Halloween" | "Megaphone" | "MountRandomUnlock" | "RandomUnlock"
+            | "TeleportToFriend" | "Transmutation" | "Unlock" | "UpgradeRemoval" | "Utility" => {
+                serde_json::from_value::<ConsumableDetails>(v)
+                    .map(ItemDetails::Consumable)
+                    .map_err(serde::de::Error::custom)
+            }
+            // "Immediate" is shared by Container and Consumable — distinguish by required fields.
+            "Immediate" => {
+                // ConsumableDetails has many optional fields; ContainerDetails has only "type".
+                // Try Container first (stricter), then Consumable.
+                if let Ok(x) = serde_json::from_value::<ContainerDetails>(v.clone()) {
+                    Ok(ItemDetails::Container(x))
+                } else {
+                    serde_json::from_value::<ConsumableDetails>(v)
+                        .map(ItemDetails::Consumable)
+                        .map_err(serde::de::Error::custom)
+                }
+            }
+            // Container sub-types (excluding "Immediate" handled above)
+            "GiftBox" | "OpenUI" => serde_json::from_value::<ContainerDetails>(v)
+                .map(ItemDetails::Container)
+                .map_err(serde::de::Error::custom),
+            // Gathering sub-types
+            "Bait" | "Fishing" | "Foraging" | "Logging" | "Lure" | "Mining" => {
+                serde_json::from_value::<GatheringDetails>(v)
+                    .map(ItemDetails::Gathering)
+                    .map_err(serde::de::Error::custom)
+            }
+            // "ContainerKey", "RentableContractNpc", "UnlimitedConsumable" are Gizmo-only.
+            "ContainerKey" | "RentableContractNpc" | "UnlimitedConsumable" => {
+                serde_json::from_value::<GizmoDetails>(v)
+                    .map(ItemDetails::Gizmo)
+                    .map_err(serde::de::Error::custom)
+            }
+            // Trinket sub-types
+            "Accessory" | "Amulet" | "Ring" => serde_json::from_value::<TrinketDetails>(v)
+                .map(ItemDetails::Trinket)
+                .map_err(serde::de::Error::custom),
+            // Upgrade component sub-types (excluding "Default" handled below)
+            "Gem" | "Rune" | "Sigil" => serde_json::from_value::<UpgradeComponentDetails>(v)
+                .map(ItemDetails::UpgradeComponent)
+                .map_err(serde::de::Error::custom),
+            // Tool (always "Salvage")
+            "Salvage" => serde_json::from_value::<ToolDetails>(v)
+                .map(ItemDetails::Tool)
+                .map_err(serde::de::Error::custom),
+            // "Default" is shared by Container, Gizmo, and UpgradeComponent.
+            // Distinguish by required fields: UpgradeComponent requires "suffix" + "infix_upgrade";
+            // Gizmo has optional vendor_ids; Container has only "type".
+            "Default" => {
+                if let Ok(x) = serde_json::from_value::<UpgradeComponentDetails>(v.clone()) {
+                    Ok(ItemDetails::UpgradeComponent(x))
+                } else if let Ok(x) = serde_json::from_value::<GizmoDetails>(v.clone()) {
+                    Ok(ItemDetails::Gizmo(x))
+                } else {
+                    serde_json::from_value::<ContainerDetails>(v)
+                        .map(ItemDetails::Container)
+                        .map_err(serde::de::Error::custom)
+                }
+            }
+            // No "type" field — distinguish by unique required fields.
+            "" => {
+                if v.get("minipet_id").is_some() {
+                    serde_json::from_value::<MiniPetDetails>(v)
+                        .map(ItemDetails::MiniPet)
+                        .map_err(serde::de::Error::custom)
+                } else if v.get("size").is_some() {
+                    serde_json::from_value::<BagDetails>(v)
+                        .map(ItemDetails::Bag)
+                        .map_err(serde::de::Error::custom)
+                } else {
+                    // Back item — all fields optional
+                    serde_json::from_value::<BackDetails>(v)
+                        .map(ItemDetails::Back)
+                        .map_err(serde::de::Error::custom)
+                }
+            }
+            other => {
+                tracing::warn!(type_ = other, "unknown ItemDetails type from GW2 API");
+                Ok(ItemDetails::Unknown(v))
+            }
+        }
+    }
+}
+
+// ── Armor ─────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArmorDetails {
+    #[serde(rename = "type")]
+    pub armor_type: ArmorType,
+    pub weight_class: WeightClass,
+    pub defense: u32,
+    #[serde(default)]
+    pub infusion_slots: Vec<InfusionSlot>,
+    #[serde(default)]
+    pub attribute_adjustment: f64,
+    #[serde(default)]
+    pub infix_upgrade: Option<InfixUpgrade>,
+    #[serde(default, rename = "suffix_item_id")]
+    pub suffix_item: Option<ItemId>,
+    #[serde(default)]
+    pub secondary_suffix_item_id: String,
+    #[serde(default)]
+    pub stat_choices: Vec<u32>,
+}
+
+#[gw2_enum]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ArmorType {
+    Boots,
+    Coat,
+    Gloves,
+    Helm,
+    HelmAquatic,
+    Leggings,
+    Shoulders,
+}
+
+#[gw2_enum]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum WeightClass {
+    Heavy,
+    Medium,
+    Light,
+    Clothing,
+}
+
+// ── Back item ─────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackDetails {
+    #[serde(default)]
+    pub infusion_slots: Vec<InfusionSlot>,
+    #[serde(default)]
+    pub attribute_adjustment: f64,
+    #[serde(default)]
+    pub infix_upgrade: Option<InfixUpgrade>,
+    #[serde(default)]
+    pub suffix_item_id: Option<u32>,
+    #[serde(default)]
+    pub secondary_suffix_item_id: String,
+    #[serde(default)]
+    pub stat_choices: Vec<u32>,
+}
+
+// ── Bag ───────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BagDetails {
+    pub size: u32,
+    pub no_sell_or_sort: bool,
+}
+
+// ── Consumable ────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConsumableDetails {
+    #[serde(rename = "type")]
+    pub consumable_type: ConsumableType,
+    pub description: Option<String>,
+    pub duration_ms: Option<u64>,
+    pub unlock_type: Option<UnlockType>,
+    pub color_id: Option<u32>,
+    pub recipe_id: Option<u32>,
+    #[serde(default)]
+    pub extra_recipe_ids: Vec<u32>,
+    pub guild_upgrade_id: Option<u32>,
+    pub apply_count: Option<u32>,
+    pub name: Option<String>,
+    pub icon: Option<String>,
+    #[serde(default)]
+    pub skins: Vec<u32>,
+}
+
+#[gw2_enum]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ConsumableType {
+    AppearanceChange,
+    Booze,
+    ContractNpc,
+    Currency,
+    Food,
+    Generic,
+    Halloween,
+    Immediate,
+    Megaphone,
+    MountRandomUnlock,
+    RandomUnlock,
+    TeleportToFriend,
+    Transmutation,
+    Unlock,
+    UpgradeRemoval,
+    Utility,
+}
+
+#[gw2_enum]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum UnlockType {
+    BagSlot,
+    BankTab,
+    BuildLibrarySlot,
+    BuildLoadoutTab,
+    Champion,
+    CollectibleCapacity,
+    Content,
+    CraftingRecipe,
+    Dye,
+    GearLoadoutTab,
+    GliderSkin,
+    JadeBotSkin,
+    Minipet,
+    Ms,
+    Outfit,
+    RandomUlock,
+    SharedSlot,
+}
+
+// ── Container ─────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContainerDetails {
+    #[serde(rename = "type")]
+    pub container_type: ContainerType,
+}
+
+#[gw2_enum]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ContainerType {
+    Default,
+    GiftBox,
+    Immediate,
+    OpenUI,
+}
+
+// ── Gathering ─────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GatheringDetails {
+    #[serde(rename = "type")]
+    pub gathering_type: GatheringType,
+}
+
+#[gw2_enum]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum GatheringType {
+    Bait,
+    Fishing,
+    Foraging,
+    Logging,
+    Lure,
+    Mining,
+}
+
+// ── Gizmo ─────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GizmoDetails {
+    #[serde(rename = "type")]
+    pub gizmo_type: GizmoType,
+    #[serde(default)]
+    pub guild_upgrade_id: Option<u32>,
+    #[serde(default)]
+    pub vendor_ids: Vec<u32>,
+}
+
+#[gw2_enum]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum GizmoType {
+    ContainerKey,
+    Default,
+    RentableContractNpc,
+    UnlimitedConsumable,
+}
+
+// ── Miniature ─────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MiniPetDetails {
+    pub minipet_id: crate::endpoints::minis::MiniId,
+}
+
+// ── Tool (Salvage kit) ────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolDetails {
+    /// Always `"Salvage"`.
+    #[serde(rename = "type")]
+    pub tool_type: ToolType,
+    pub charges: u32,
+}
+
+#[gw2_enum]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ToolType {
+    Salvage,
+}
+
+// ── Trinket ───────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrinketDetails {
+    #[serde(rename = "type")]
+    pub trinket_type: TrinketType,
+    #[serde(default)]
+    pub infusion_slots: Vec<InfusionSlot>,
+    #[serde(default)]
+    pub attribute_adjustment: f64,
+    #[serde(default)]
+    pub infix_upgrade: Option<InfixUpgrade>,
+    #[serde(default)]
+    pub suffix_item_id: Option<u32>,
+    #[serde(default)]
+    pub secondary_suffix_item_id: String,
+    #[serde(default)]
+    pub stat_choices: Vec<u32>,
+}
+
+#[gw2_enum]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum TrinketType {
+    Accessory,
+    Amulet,
+    Ring,
+}
+
+// ── Upgrade component ─────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpgradeComponentDetails {
+    #[serde(rename = "type")]
+    pub upgrade_type: UpgradeComponentType,
+    #[serde(default)]
+    pub flags: Vec<UpgradeComponentFlag>,
+    #[serde(default)]
+    pub infusion_upgrade_flags: Vec<InfusionUpgradeFlag>,
+    pub suffix: String,
+    pub infix_upgrade: InfixUpgrade,
+    #[serde(default)]
+    pub bonuses: Vec<String>,
+}
+
+#[gw2_enum]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum UpgradeComponentType {
+    Default,
+    Gem,
+    Rune,
+    Sigil,
+}
+
+/// Which item slots accept this upgrade component.
+#[gw2_enum]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum UpgradeComponentFlag {
+    Axe,
+    Dagger,
+    Focus,
+    Greatsword,
+    Hammer,
+    Harpoon,
+    HeavyArmor,
+    LightArmor,
+    LongBow,
+    Mace,
+    MediumArmor,
+    Pistol,
+    Rifle,
+    Scepter,
+    Shield,
+    ShortBow,
+    Speargun,
+    Staff,
+    Sword,
+    Torch,
+    Trinket,
+    Trident,
+    Warhorn,
+}
+
+#[gw2_enum]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum InfusionUpgradeFlag {
+    Enrichment,
+    Infusion,
+}
+
+// ── Weapon ────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WeaponDetails {
+    #[serde(rename = "type")]
+    pub weapon_type: WeaponType,
+    pub damage_type: DamageType,
+    pub min_power: u32,
+    pub max_power: u32,
+    pub defense: u32,
+    #[serde(default)]
+    pub infusion_slots: Vec<InfusionSlot>,
+    #[serde(default)]
+    pub attribute_adjustment: f64,
+    #[serde(default)]
+    pub infix_upgrade: Option<InfixUpgrade>,
+    #[serde(default)]
+    pub suffix_item_id: Option<u32>,
+    #[serde(default)]
+    pub secondary_suffix_item_id: String,
+    #[serde(default)]
+    pub stat_choices: Vec<u32>,
+}
+
+#[gw2_enum]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum WeaponType {
+    Axe,
+    Dagger,
+    Focus,
+    Greatsword,
+    Hammer,
+    Harpoon,
+    LargeBundle,
+    LongBow,
+    Mace,
+    Pistol,
+    Rifle,
+    Scepter,
+    Shield,
+    ShortBow,
+    SmallBundle,
+    Speargun,
+    Staff,
+    Sword,
+    Torch,
+    Toy,
+    ToyTwoHanded,
+    Trident,
+    Warhorn,
+}
+
+#[gw2_enum]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum DamageType {
+    Choking,
+    Fire,
+    Ice,
+    Lightning,
+    Physical,
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::ItemFlag;
+
+    #[test]
+    fn unknown_item_flag_deserializes_to_unknown() {
+        let flags: Vec<ItemFlag> =
+            serde_json::from_str(r#"["AccountBound","BrandNewFlagFromAnet"]"#).unwrap();
+        assert_eq!(flags[0], ItemFlag::AccountBound);
+        assert_eq!(
+            flags[1],
+            ItemFlag::Unknown("BrandNewFlagFromAnet".to_string())
+        );
+    }
+
+    #[test]
+    fn unknown_item_flag_serializes_raw_string() {
+        let flag = ItemFlag::Unknown("FutureFlag".to_string());
+        assert_eq!(serde_json::to_string(&flag).unwrap(), r#""FutureFlag""#);
+    }
+
+    // Details JSON is the `details` sub-object from the GW2 API.
+    // The `"type"` field within details is the sub-type discriminator.
+
+    #[test]
+    fn armor_details_deserializes() {
+        let json = r#"{"type":"Coat","weight_class":"Heavy","defense":300,"infusion_slots":[],"attribute_adjustment":0.0,"secondary_suffix_item_id":""}"#;
+        let details: ItemDetails = serde_json::from_str(json).unwrap();
+        match details {
+            ItemDetails::Armor(a) => {
+                assert_eq!(a.armor_type, ArmorType::Coat);
+                assert_eq!(a.weight_class, WeightClass::Heavy);
+            }
+            other => panic!("expected Armor, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn weapon_details_deserializes() {
+        // The details object "type" is the weapon slot (e.g. "LongBow").
+        let json = r#"{
+            "type": "LongBow",
+            "damage_type": "Physical",
+            "min_power": 385,
+            "max_power": 452,
+            "defense": 0,
+            "infusion_slots": [],
+            "infix_upgrade": {
+                "attributes": [
+                    { "attribute": "Power", "modifier": 62 },
+                    { "attribute": "Precision", "modifier": 44 }
+                ]
+            },
+            "suffix_item_id": 24547,
+            "secondary_suffix_item_id": ""
+        }"#;
+        let details: ItemDetails = serde_json::from_str(json).unwrap();
+        match details {
+            ItemDetails::Weapon(w) => {
+                assert_eq!(w.weapon_type, WeaponType::LongBow);
+                assert_eq!(w.damage_type, DamageType::Physical);
+                assert_eq!(w.min_power, 385);
+            }
+            other => panic!("expected Weapon, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn consumable_food_deserializes() {
+        // The details object "type" is the consumable sub-type.
+        let json = r#"{
+            "type": "Food",
+            "duration_ms": 1800000,
+            "apply_count": 1,
+            "name": "Nourishment",
+            "icon": "https://render.guildwars2.com/file/foo/bar.png",
+            "description": "30% Magic Find"
+        }"#;
+        let details: ItemDetails = serde_json::from_str(json).unwrap();
+        match details {
+            ItemDetails::Consumable(c) => {
+                assert_eq!(c.consumable_type, ConsumableType::Food);
+                assert_eq!(c.duration_ms, Some(1800000));
+            }
+            other => panic!("expected Consumable, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn bag_details_deserializes() {
+        let json = r#"{"size":20,"no_sell_or_sort":false}"#;
+        let details: ItemDetails = serde_json::from_str(json).unwrap();
+        match details {
+            ItemDetails::Bag(b) => assert_eq!(b.size, 20),
+            other => panic!("expected Bag, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn trinket_details_deserializes() {
+        let json = r#"{"type":"Ring","infusion_slots":[],"attribute_adjustment":0.0,"secondary_suffix_item_id":""}"#;
+        let details: ItemDetails = serde_json::from_str(json).unwrap();
+        match details {
+            ItemDetails::Trinket(t) => assert_eq!(t.trinket_type, TrinketType::Ring),
+            other => panic!("expected Trinket, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn upgrade_component_deserializes() {
+        let json = r#"{"type":"Sigil","flags":["Axe","Sword"],"infusion_upgrade_flags":[],"suffix":"of Fire","infix_upgrade":{"attributes":[]}}"#;
+        let details: ItemDetails = serde_json::from_str(json).unwrap();
+        match details {
+            ItemDetails::UpgradeComponent(u) => {
+                assert_eq!(u.upgrade_type, UpgradeComponentType::Sigil);
+                assert_eq!(u.suffix, "of Fire");
+            }
+            other => panic!("expected UpgradeComponent, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn container_details_deserializes() {
+        let json = r#"{"type":"GiftBox"}"#;
+        let details: ItemDetails = serde_json::from_str(json).unwrap();
+        assert!(matches!(details, ItemDetails::Container(_)));
+    }
+
+    #[test]
+    fn gathering_details_deserializes() {
+        let json = r#"{"type":"Mining"}"#;
+        let details: ItemDetails = serde_json::from_str(json).unwrap();
+        assert!(matches!(details, ItemDetails::Gathering(_)));
+    }
+
+    #[test]
+    fn tool_details_deserializes() {
+        let json = r#"{"type":"Salvage","charges":25}"#;
+        let details: ItemDetails = serde_json::from_str(json).unwrap();
+        match details {
+            ItemDetails::Tool(t) => assert_eq!(t.charges, 25),
+            other => panic!("expected Tool, got {:?}", other),
+        }
+    }
+}

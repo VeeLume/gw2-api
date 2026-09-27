@@ -1,0 +1,30 @@
+[package]
+name = "gw2-api"
+description = "Type-safe Guild Wars 2 API v2 client library"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+gw2-api-macros = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+chrono = { workspace = true }
+linkme = { workspace = true }
+async-stream = "0.3"
+base64 = "0.22"
+futures = "0.3"
+governor = "0.6"
+moka = { version = "0.12", features = ["future"] }
+
+[features]
+# Run live API calls to verify patch tables still match the GW2 API.
+# Usage: cargo test -p gw2-api --features verify-patches
+verify-patches = []
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
