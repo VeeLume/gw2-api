@@ -495,11 +495,17 @@ pub enum UnlockType {
     GearLoadoutTab,
     GliderSkin,
     JadeBotSkin,
+    /// Homestead conjured doorway skins (e.g. 105144). Not on the wiki as of 2026-09-27.
+    MagicDoorSkin,
     Minipet,
+    /// Mount skins.
     Ms,
     Outfit,
+    /// Spelled this way on the wiki, which doubts it exists; no item uses it as of 2026-09-27.
     RandomUlock,
     SharedSlot,
+    /// Fashion Template Expansion (106996). Not on the wiki as of 2026-09-27.
+    WardrobeTemplateTab,
 }
 
 // ── Container ─────────────────────────────────────────────────────────────────

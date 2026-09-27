@@ -23,6 +23,8 @@ pub enum CraftingDiscipline {
     Armorsmith,
     Artificer,
     Chef,
+    /// Homestead crafting (Janthir Wilds).
+    Homesteader,
     Huntsman,
     Jeweler,
     Leatherworker,
