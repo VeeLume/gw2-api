@@ -5,8 +5,8 @@
 //!   `.prices()`                        → `PricesEndpoint`   (bulk resource)
 //!   `.listings()`                      → `ListingsEndpoint` (bulk resource)
 //!   `.delivery()`                      → `DeliveryEndpoint.get()` (singleton, auth)
-//!   `.exchange().coins(qty)`           → `Result<ExchangeRate>`
-//!   `.exchange().gems(qty)`            → `Result<ExchangeRate>`
+//!   `.exchange().coins(qty)`           → `Result<CoinsToGems>`
+//!   `.exchange().gems(qty)`            → `Result<GemsToCoins>`
 //!   `.transactions().current().buys()` → `Result<Vec<Transaction>>`
 //!   `.transactions().current().sells()`→ `Result<Vec<Transaction>>`
 //!   `.transactions().history().buys()` → `Result<Vec<Transaction>>`
@@ -24,8 +24,7 @@ use crate::error::Gw2ApiError;
 /// Trading post price listing for an item.
 // path "commerce/prices" → PricesEndpoint, commerce.prices()
 // id_type = ItemId (existing type, no new ID generated)
-// TODO: add `paged`; the endpoint supports page/page_size (not ids=all).
-#[gw2_endpoint(path = "commerce/prices", id_type = ItemId)]
+#[gw2_endpoint(path = "commerce/prices", id_type = ItemId, paged)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ItemPrice {
     pub id: ItemId,
@@ -44,8 +43,7 @@ pub struct PriceInfo {
 /// A trading post listing (individual buy/sell orders).
 // path "commerce/listings" → ListingsEndpoint, commerce.listings()
 // id_type = ItemId (existing type, no new ID generated)
-// TODO: add `paged`; the endpoint supports page/page_size (not ids=all).
-#[gw2_endpoint(path = "commerce/listings", id_type = ItemId)]
+#[gw2_endpoint(path = "commerce/listings", id_type = ItemId, paged)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Listing {
     pub id: ItemId,
@@ -80,19 +78,31 @@ pub struct DeliveryItem {
 
 // ── Shared response types ─────────────────────────────────────────────────────
 
-/// Exchange rate info (gems ↔ gold).
+/// Result of `/v2/commerce/exchange/coins`: what the given coins buy in gems.
+///
+/// The API calls the result `quantity` on both exchange endpoints, but it counts
+/// gems here and coins in [`GemsToCoins`], so the two get their own types.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-// TODO: `quantity` is gems for /exchange/coins but coins for /exchange/gems;
-//       split the types or make the gems result a `Coin`.
-pub struct ExchangeRate {
+pub struct CoinsToGems {
     pub coins_per_gem: Coin,
-    pub quantity: u32,
+    /// Gems received.
+    #[serde(rename = "quantity")]
+    pub gems: u32,
+}
+
+/// Result of `/v2/commerce/exchange/gems`: what the given gems sell for in coins.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GemsToCoins {
+    pub coins_per_gem: Coin,
+    /// Coins received.
+    #[serde(rename = "quantity")]
+    pub coins: Coin,
 }
 
 /// A trading post transaction (current or historical).
-// TODO: the transaction lists are paginated, but collections fetch one request:
-//       only the first page is returned.
-#[gw2_endpoint(path = "commerce/transactions/current/buys", auth, collection, also(
+///
+/// The lists are paginated; `.get()` fetches every page.
+#[gw2_endpoint(path = "commerce/transactions/current/buys", auth, collection, paged, also(
     "commerce/transactions/current/sells",
     "commerce/transactions/history/buys",
     "commerce/transactions/history/sells",
@@ -134,10 +144,10 @@ pub struct History;
 
 // ── Exchange endpoint methods ─────────────────────────────────────────────────
 
-/// Exchange gold for gems.
+/// How many gems `quantity` coins buy.
 // path "commerce/exchange/coins", fn name "coins" == last seg → attaches to ExchangeEndpoint
 #[gw2_endpoint(path = "commerce/exchange/coins", test_params(quantity = 1000000u32))]
-pub async fn coins(&self, quantity: u32) -> Result<ExchangeRate, Gw2ApiError> {
+pub async fn coins(&self, quantity: u32) -> Result<CoinsToGems, Gw2ApiError> {
     self.0
         .request("/commerce/exchange/coins")
         .param("quantity", quantity)
@@ -145,10 +155,10 @@ pub async fn coins(&self, quantity: u32) -> Result<ExchangeRate, Gw2ApiError> {
         .await
 }
 
-/// Exchange gems for gold.
+/// How many coins `quantity` gems sell for.
 // path "commerce/exchange/gems", fn name "gems" == last seg → attaches to ExchangeEndpoint
 #[gw2_endpoint(path = "commerce/exchange/gems", test_params(quantity = 100u32))]
-pub async fn gems(&self, quantity: u32) -> Result<ExchangeRate, Gw2ApiError> {
+pub async fn gems(&self, quantity: u32) -> Result<GemsToCoins, Gw2ApiError> {
     self.0
         .request("/commerce/exchange/gems")
         .param("quantity", quantity)

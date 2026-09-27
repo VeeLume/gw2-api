@@ -92,6 +92,23 @@ async fn fetch<S: AuthState>(client: &Gw2Client<S>, path: &str, shape: Shape) ->
                 .collect(),
             missing: vec![],
         }),
+        Shape::Pages => {
+            let mut items = Vec::new();
+            for page in 0u32.. {
+                let query = [("page", page.to_string()), ("page_size", CHUNK.to_string())];
+                let batch = match client.get_raw(path, &query).await {
+                    Ok(v) => as_array(v)?,
+                    Err(Gw2ApiError::BadRequest(_)) if page > 0 => break,
+                    Err(e) => return Err(e),
+                };
+                let short = batch.len() < CHUNK;
+                items.extend(batch);
+                if short {
+                    break;
+                }
+            }
+            Ok(Fetched { items, missing: vec![] })
+        }
         Shape::Bulk => {
             let ids: Vec<String> = as_array(client.get_raw(path, &[]).await?)?.iter().map(id_string).collect();
             let batches: Vec<Result<Value, Gw2ApiError>> = stream::iter(ids.chunks(CHUNK))

@@ -45,6 +45,8 @@ pub enum Shape {
     One,
     /// `GET /path` returns an array of items (`null` entries are skipped).
     Array,
+    /// Like `Array`, but paginated: every `?page=N&page_size=200` is fetched.
+    Pages,
 }
 
 /// What the `check` command needs to validate an endpoint against raw API data.
@@ -91,7 +93,7 @@ pub struct EndpointEntry {
     pub path: &'static str,
     /// Whether this endpoint requires an API key.
     pub auth: bool,
-    /// Human-readable Rust return type, e.g. `"Item"`, `"Vec<WalletEntry>"`, `"ExchangeRate"`.
+    /// Human-readable Rust return type, e.g. `"Item"`, `"Vec<WalletEntry>"`, `"CoinsToGems"`.
     pub type_name: &'static str,
     /// Human-readable call signature, e.g. `"get(id)"`, `"get()"`, `"coins(quantity)"`.
     pub call: &'static str,

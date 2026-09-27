@@ -252,10 +252,16 @@ impl Parse for EndpointStructArgs {
                 "`id_type` and `collection` are mutually exclusive",
             ));
         }
-        if (paged || no_default_patch) && id_type.is_none() {
+        if (paged && id_type.is_none() && !collection) || (no_default_patch && id_type.is_none()) {
             return Err(syn::Error::new(
                 proc_macro2::Span::call_site(),
-                "`paged` and `no_default_patch` require `id_type`",
+                "`paged` requires `id_type` or `collection`; `no_default_patch` requires `id_type`",
+            ));
+        }
+        if paged && nullable {
+            return Err(syn::Error::new(
+                proc_macro2::Span::call_site(),
+                "`paged` and `nullable` are mutually exclusive",
             ));
         }
         if nullable && !collection {
@@ -477,6 +483,8 @@ fn expand_endpoint_struct(
     let extra_paths = args.extra_paths.clone();
     let auth = args.auth;
     let collection = args.collection;
+    // With `collection`: the list is paginated; `.get()` fetches every page.
+    let paged_collection = args.paged && args.collection;
 
     // When no_trait is set, derive the endpoint handle name from the full path
     // (e.g. "commerce/transactions/current/buys" → `CommerceTransactionsCurrentBuysEndpoint`)
@@ -604,11 +612,21 @@ fn expand_endpoint_struct(
             },
         };
 
+        let extra_shape = if paged_collection {
+            quote! { ::gw2_api::registry::Shape::Pages }
+        } else {
+            quote! { ::gw2_api::registry::Shape::Array }
+        };
+        let extra_fetch = if paged_collection {
+            quote! { self.0.fetch_all_pages::<#struct_name>(#path_with_slash_lit).await }
+        } else {
+            quote! { self.0.request(#path_with_slash_lit).send::<::std::vec::Vec<#struct_name>>().await }
+        };
         let get_method: TokenStream2 = if auth_bool {
             quote! {
                 impl<'c> #extra_ep<'c, ::gw2_api::client::auth::Authenticated> {
                     pub async fn get(&self) -> ::std::result::Result<::std::vec::Vec<#struct_name>, ::gw2_api::error::Gw2ApiError> {
-                        self.0.request(#path_with_slash_lit).send::<::std::vec::Vec<#struct_name>>().await
+                        #extra_fetch
                     }
                 }
             }
@@ -616,7 +634,7 @@ fn expand_endpoint_struct(
             quote! {
                 impl<'c, S: ::gw2_api::client::auth::AuthState> #extra_ep<'c, S> {
                     pub async fn get(&self) -> ::std::result::Result<::std::vec::Vec<#struct_name>, ::gw2_api::error::Gw2ApiError> {
-                        self.0.request(#path_with_slash_lit).send::<::std::vec::Vec<#struct_name>>().await
+                        #extra_fetch
                     }
                 }
             }
@@ -630,7 +648,7 @@ fn expand_endpoint_struct(
                 type_name: #type_name_str,
                 call: #call_str,
                 check: ::std::option::Option::Some(::gw2_api::registry::CheckSpec {
-                    shape: ::gw2_api::registry::Shape::Array,
+                    shape: #extra_shape,
                     parse: ::gw2_api::registry::parse_value::<#struct_name>,
                 }),
                 single: |unauth, auth| {
@@ -1122,7 +1140,10 @@ fn expand_fixed_endpoint_struct(
     };
 
     // The inner fetch call for .get(). When no_trait, inline the request directly.
-    let fetch_call = if no_trait {
+    let paged_collection = args.paged && collection;
+    let fetch_call = if paged_collection {
+        quote! { self.0.fetch_all_pages::<#struct_name>(#path_with_slash_lit).await }
+    } else if no_trait {
         quote! { self.0.request(#path_with_slash_lit).send::<::std::vec::Vec<#struct_name>>().await }
     } else if collection {
         quote! { self.0.fetch_collection::<#struct_name>().await }
@@ -1130,7 +1151,9 @@ fn expand_fixed_endpoint_struct(
         quote! { self.0.fetch_singleton::<#struct_name>().await }
     };
 
-    let check_shape = if collection {
+    let check_shape = if paged_collection {
+        quote! { ::gw2_api::registry::Shape::Pages }
+    } else if collection {
         quote! { ::gw2_api::registry::Shape::Array }
     } else {
         quote! { ::gw2_api::registry::Shape::One }

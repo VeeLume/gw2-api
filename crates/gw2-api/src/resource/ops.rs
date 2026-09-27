@@ -13,6 +13,7 @@
 use std::collections::{HashMap, HashSet};
 
 use async_stream::stream;
+use serde::de::DeserializeOwned;
 use futures::{Stream, TryStreamExt};
 
 use crate::client::Gw2Client;
@@ -79,6 +80,31 @@ impl<S: AuthState> Gw2Client<S> {
         &self,
     ) -> Result<Vec<R::Item>, Gw2ApiError> {
         self.request(format!("/{}", R::PATH)).send().await
+    }
+}
+
+impl<S: AuthState> Gw2Client<S> {
+    /// Fetch every page of a fixed-URL, paginated list (e.g. `/v2/commerce/transactions/…`).
+    ///
+    /// Requests `page_size=200` until a page comes back short, or a page past the end
+    /// answers 400 (the API never returns an empty page). A 400 on the first page is an error.
+    pub(crate) async fn fetch_all_pages<T: DeserializeOwned>(&self, path: &str) -> Result<Vec<T>, Gw2ApiError> {
+        const PAGE_SIZE: u32 = 200;
+        let mut all = Vec::new();
+        for page in 0.. {
+            match self.request(path).page(page, PAGE_SIZE).send::<Vec<T>>().await {
+                Ok(items) => {
+                    let short = items.len() < PAGE_SIZE as usize;
+                    all.extend(items);
+                    if short {
+                        break;
+                    }
+                }
+                Err(Gw2ApiError::BadRequest(_)) if page > 0 => break,
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(all)
     }
 }
 

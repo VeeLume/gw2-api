@@ -240,3 +240,70 @@ fn authenticate_shares_limiter_and_cache() {
     assert!(Arc::ptr_eq(a.rate_limiter(), b.rate_limiter()));
     assert!(Arc::ptr_eq(a.cache(), b.cache()));
 }
+
+fn transactions(from: u64, n: u64) -> serde_json::Value {
+    (from..from + n)
+        .map(|id| json!({ "id": id, "item_id": 19976, "price": 100, "quantity": 1, "created": "2026-09-27T10:00:00+00:00" }))
+        .collect()
+}
+
+#[tokio::test]
+async fn transaction_lists_fetch_every_page() {
+    let server = MockServer::start().await;
+    let path_ = "/v2/commerce/transactions/history/sells";
+    Mock::given(path(path_))
+        .and(query_param("page", "0"))
+        .and(query_param("page_size", "200"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(transactions(0, 200)))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(path(path_))
+        .and(query_param("page", "1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(transactions(200, 3)))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let all = authed(&server).commerce().transactions().history().sells().get().await.unwrap();
+    assert_eq!(all.len(), 203);
+    assert_eq!(all.last().unwrap().id, 202);
+}
+
+#[tokio::test]
+async fn transaction_paging_stops_at_the_400_past_the_end() {
+    let server = MockServer::start().await;
+    let path_ = "/v2/commerce/transactions/current/buys";
+    Mock::given(path(path_))
+        .and(query_param("page", "0"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(transactions(0, 200)))
+        .mount(&server)
+        .await;
+    Mock::given(path(path_))
+        .and(query_param("page", "1"))
+        .respond_with(ResponseTemplate::new(400).set_body_json(json!({ "text": "page out of range" })))
+        .mount(&server)
+        .await;
+
+    let all = authed(&server).commerce().transactions().current().buys().get().await.unwrap();
+    assert_eq!(all.len(), 200);
+}
+
+#[tokio::test]
+async fn exchange_results_name_what_they_count() {
+    let server = MockServer::start().await;
+    Mock::given(path("/v2/commerce/exchange/gems"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "coins_per_gem": 2569, "quantity": 256997 })))
+        .mount(&server)
+        .await;
+    Mock::given(path("/v2/commerce/exchange/coins"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "coins_per_gem": 3831, "quantity": 261 })))
+        .mount(&server)
+        .await;
+
+    let client = client(&server);
+    let sold = client.commerce().exchange().gems(100).await.unwrap();
+    assert_eq!(sold.coins, gw2_api::Coin(256997));
+    let bought = client.commerce().exchange().coins(1_000_000).await.unwrap();
+    assert_eq!(bought.gems, 261);
+}
