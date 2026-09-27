@@ -10,6 +10,8 @@
 //! | Fetch all                  | `client.all::<Item>()`                  | `?ids=all` or all pages     |
 //! | Stream pages               | `client.pages::<Item>(opts)`            | `?page=N&page_size=M`       |
 
+use std::collections::{HashMap, HashSet};
+
 use async_stream::stream;
 use futures::{Stream, TryStreamExt};
 
@@ -85,10 +87,11 @@ impl<S: AuthState> Gw2Client<S> {
 impl<S: AuthState> Gw2Client<S> {
     /// Fetch a single resource by ID.
     ///
-    /// Results are cached transparently. Subsequent calls with the same ID and type
-    /// return the cached value without an API request.
+    /// Results are cached in the shared static cache (unless the resource is `auth`).
+    /// Concurrent requests for the same ID share one fetch.
     ///
-    /// Known API bugs are corrected automatically via [`Patchable::patch`].
+    /// Known API bugs are corrected automatically via [`Patchable::patch`], before
+    /// the value is cached.
     pub(crate) async fn get<R: Resource + Patchable>(
         &self,
         id: impl Into<R::Id>,
@@ -102,53 +105,78 @@ impl<S: AuthState> Gw2Client<S> {
     }
 
     async fn get_by_id<R: Resource + Patchable>(&self, id: R::Id) -> Result<R, Gw2ApiError> {
-        // Cache read
-        if let Some(cached) = self.inner.cache.get::<R>(&id).await {
-            return Ok(cached);
+        let fetch = async {
+            let mut value: R = self.request(format!("/{}/{}", R::PATH, id)).send().await?;
+            value.patch();
+            Ok(value)
+        };
+        if R::AUTH {
+            return fetch.await;
         }
-
-        // Fetch from API as raw JSON so we can cache it before deserializing
-        let path = format!("/{}/{}", R::PATH, id);
-        let raw: serde_json::Value = self.request(path).send().await?;
-
-        // Cache write (raw JSON — corrections are applied after deserialization)
-        self.inner.cache.insert::<R>(&id, raw.clone()).await;
-
-        let mut value: R = serde_json::from_value(raw).map_err(Gw2ApiError::Json)?;
-        value.patch();
-        Ok(value)
+        self.inner
+            .cache
+            .get_or_fetch::<R, _>(&self.inner.cache_scope, &id, fetch)
+            .await
     }
 
-    /// Fetch multiple resources by IDs (auto-chunked at 200 per request).
+    /// Store freshly fetched, already patched values in the static cache.
+    async fn cache_all<R: Resource>(&self, items: &[R]) {
+        if R::AUTH || !self.inner.cache.is_enabled() {
+            return;
+        }
+        for item in items {
+            self.inner
+                .cache
+                .insert::<R>(&self.inner.cache_scope, item.id(), item.clone())
+                .await;
+        }
+    }
+
+    /// Fetch multiple resources by IDs.
     ///
-    /// Returns an empty `Vec` for empty input.
+    /// Duplicate IDs are requested once; cached IDs are not requested at all; the
+    /// rest go out as `?ids=` in chunks of 200. The result follows the order of
+    /// `ids` (duplicates included). IDs the API does not return are left out.
     ///
     /// Known API bugs are corrected automatically via [`Patchable::patch`].
     pub(crate) async fn get_many<R: Resource + Patchable>(
         &self,
         ids: impl IntoIterator<Item = R::Id>,
     ) -> Result<Vec<R>, Gw2ApiError> {
+        const CHUNK_SIZE: usize = 200;
+
         let ids: Vec<R::Id> = ids.into_iter().collect();
-        if ids.is_empty() {
-            return Ok(Vec::new());
+        let cacheable = !R::AUTH && self.inner.cache.is_enabled();
+
+        let mut found: HashMap<R::Id, R> = HashMap::with_capacity(ids.len());
+        let mut misses: Vec<R::Id> = Vec::new();
+        let mut seen: HashSet<&R::Id> = HashSet::with_capacity(ids.len());
+        for id in &ids {
+            if !seen.insert(id) {
+                continue;
+            }
+            if cacheable
+                && let Some(hit) = self.inner.cache.get::<R>(&self.inner.cache_scope, id).await {
+                    found.insert(id.clone(), hit);
+                    continue;
+                }
+            misses.push(id.clone());
         }
 
-        const CHUNK_SIZE: usize = 200;
-        let mut results = Vec::with_capacity(ids.len());
-
-        for chunk in ids.chunks(CHUNK_SIZE) {
-            let mut chunk_results: Vec<R> = self
+        for chunk in misses.chunks(CHUNK_SIZE) {
+            let mut fetched: Vec<R> = self
                 .request(format!("/{}", R::PATH))
                 .ids(chunk.iter())
                 .send()
                 .await?;
-            for item in &mut chunk_results {
+            for item in &mut fetched {
                 item.patch();
             }
-            results.extend(chunk_results);
+            self.cache_all(&fetched).await;
+            found.extend(fetched.into_iter().map(|item| (item.id().clone(), item)));
         }
 
-        Ok(results)
+        Ok(ids.iter().filter_map(|id| found.get(id).cloned()).collect())
     }
 
     /// List all IDs for a resource type.
@@ -162,14 +190,20 @@ impl<S: AuthState> Gw2Client<S> {
     ///
     /// Tries `?ids=all` first; on [`Gw2ApiError::BadRequest`] (endpoint doesn't support it),
     /// falls back to full pagination. Equivalent to Python's `await Item.all(expanded=True)`.
-    pub(crate) async fn all<R: Resource + PagedResource>(&self) -> Result<Vec<R>, Gw2ApiError> {
+    pub(crate) async fn all<R: PagedResource + Patchable>(&self) -> Result<Vec<R>, Gw2ApiError> {
         match self
             .request(format!("/{}", R::PATH))
             .param("ids", "all")
             .send::<Vec<R>>()
             .await
         {
-            Ok(results) => Ok(results),
+            Ok(mut results) => {
+                for item in &mut results {
+                    item.patch();
+                }
+                self.cache_all(&results).await;
+                Ok(results)
+            }
             Err(Gw2ApiError::BadRequest(_)) => {
                 // Endpoint doesn't support ids=all — collect all pages
                 self.pages::<R>(PageOptions::default().page_size(200))
@@ -184,8 +218,9 @@ impl<S: AuthState> Gw2Client<S> {
     ///
     /// Equivalent to Python's `async for item in Item.pages(...)`.
     ///
-    /// Uses the `X-Page-Total` response header to determine when to stop automatically.
-    /// You can also set an explicit end page via [`PageOptions::range`].
+    /// Stops after a short page or when a later page answers 400 (past the end).
+    /// You can also set an explicit end page via [`PageOptions::range`]. Items are
+    /// patched and cached like `get_many`.
     ///
     /// # Example
     ///
@@ -198,7 +233,7 @@ impl<S: AuthState> Gw2Client<S> {
     ///     println!("{}", item.name);
     /// }
     /// ```
-    pub(crate) fn pages<R: PagedResource>(
+    pub(crate) fn pages<R: PagedResource + Patchable>(
         &self,
         opts: PageOptions,
     ) -> impl Stream<Item = Result<R, Gw2ApiError>> + '_ {
@@ -212,11 +247,10 @@ impl<S: AuthState> Gw2Client<S> {
             let total_pages: Option<u32> = opts.end_page;
 
             loop {
-                if let Some(end) = total_pages {
-                    if page >= end {
+                if let Some(end) = total_pages
+                    && page >= end {
                         break;
                     }
-                }
 
                 let result: Result<Vec<R>, Gw2ApiError> = self
                     .request(format!("/{}", R::PATH))
@@ -225,8 +259,12 @@ impl<S: AuthState> Gw2Client<S> {
                     .await;
 
                 match result {
-                    Ok(items) => {
+                    Ok(mut items) => {
                         let count = items.len() as u32;
+                        for item in &mut items {
+                            item.patch();
+                        }
+                        self.cache_all(&items).await;
                         for item in items {
                             yield Ok(item);
                         }
@@ -236,8 +274,11 @@ impl<S: AuthState> Gw2Client<S> {
                         }
                         page += 1;
                     }
-                    Err(Gw2ApiError::BadRequest(_)) | Err(Gw2ApiError::NotFound(_)) => {
-                        // Exhausted pages
+                    // A page past the end is a 400 (the API never returns an empty
+                    // page). On the first page it is a real error.
+                    Err(Gw2ApiError::BadRequest(_)) | Err(Gw2ApiError::NotFound(_))
+                        if page > opts.start_page =>
+                    {
                         break;
                     }
                     Err(e) => {

@@ -50,12 +50,19 @@ impl ResourceId for String {}
 /// access to all generic client operations:
 /// [`get`][crate::client::Gw2Client::get], [`get_many`][crate::client::Gw2Client::get_many],
 /// [`list_ids`][crate::client::Gw2Client::list_ids], and [`all`][crate::client::Gw2Client::all].
-pub trait Resource: DeserializeOwned + Send + Sync + 'static {
+pub trait Resource: DeserializeOwned + Clone + Send + Sync + 'static {
     /// The typed ID for this resource.
     type Id: ResourceId;
 
     /// The base URL path, without leading slash. E.g. `"items"` or `"commerce/prices"`.
     const PATH: &'static str;
+
+    /// Whether the endpoint needs an API key. Such resources are account data
+    /// and never enter the shared static cache.
+    const AUTH: bool = false;
+
+    /// The resource's own ID, used to match `?ids=` results back to requests.
+    fn id(&self) -> &Self::Id;
 }
 
 /// Marker trait: this resource supports `?page=N&page_size=M` pagination.

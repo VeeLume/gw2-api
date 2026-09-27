@@ -6,14 +6,18 @@
 
 use std::marker::PhantomData;
 use std::sync::Arc;
+use std::time::Duration;
 
 use reqwest::Client;
 
-use super::auth::{Authenticated, AuthState, Unauthenticated};
-use super::{ClientState, Gw2Client, Language, BASE_URL, DEFAULT_SCHEMA_VERSION, USER_AGENT};
+use super::auth::{AuthState, Authenticated, Unauthenticated};
+use super::{BASE_URL, ClientState, DEFAULT_SCHEMA_VERSION, Gw2Client, Language, USER_AGENT};
 use crate::cache::ResourceCache;
 use crate::error::Gw2ApiError;
-use crate::rate_limit::{build_rate_limiter, GW2_BURST_SIZE, GW2_REFILL_RATE_PER_SECOND};
+use crate::rate_limit::{self, RateLimiter};
+
+const DEFAULT_MAX_RETRIES: u32 = 5;
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// Builder for [`Gw2Client`].
 ///
@@ -21,12 +25,12 @@ use crate::rate_limit::{build_rate_limiter, GW2_BURST_SIZE, GW2_REFILL_RATE_PER_
 pub struct ClientBuilder<S: AuthState> {
     api_key: Option<String>,
     lang: Language,
-    cache_capacity: u64,
-    /// Steady-state refill rate in requests per second.
-    rate_refill_per_second: u32,
-    /// Maximum burst size (number of requests that can be sent back-to-back).
-    rate_burst: u32,
+    base_url: String,
     schema_version: Option<String>,
+    max_retries: u32,
+    timeout: Duration,
+    cache: Option<Arc<ResourceCache>>,
+    rate_limiter: Option<Arc<RateLimiter>>,
     _auth: PhantomData<S>,
 }
 
@@ -35,10 +39,12 @@ impl ClientBuilder<Unauthenticated> {
         Self {
             api_key: None,
             lang: Language::default(),
-            cache_capacity: 4_096,
-            rate_refill_per_second: GW2_REFILL_RATE_PER_SECOND,
-            rate_burst: GW2_BURST_SIZE,
+            base_url: BASE_URL.to_string(),
             schema_version: Some(DEFAULT_SCHEMA_VERSION.to_string()),
+            max_retries: DEFAULT_MAX_RETRIES,
+            timeout: DEFAULT_TIMEOUT,
+            cache: None,
+            rate_limiter: None,
             _auth: PhantomData,
         }
     }
@@ -48,17 +54,19 @@ impl ClientBuilder<Unauthenticated> {
         ClientBuilder {
             api_key: Some(key.into()),
             lang: self.lang,
-            cache_capacity: self.cache_capacity,
-            rate_refill_per_second: self.rate_refill_per_second,
-            rate_burst: self.rate_burst,
+            base_url: self.base_url,
             schema_version: self.schema_version,
+            max_retries: self.max_retries,
+            timeout: self.timeout,
+            cache: self.cache,
+            rate_limiter: self.rate_limiter,
             _auth: PhantomData,
         }
     }
 
     /// Build an unauthenticated client.
     pub fn build(self) -> Gw2Client<Unauthenticated> {
-        build_client(self.lang, None, self.cache_capacity, self.rate_refill_per_second, self.rate_burst, self.schema_version)
+        self.build_client()
     }
 }
 
@@ -67,78 +75,97 @@ impl ClientBuilder<Authenticated> {
     ///
     /// Returns an error if the API key is empty.
     pub fn build(self) -> Result<Gw2Client<Authenticated>, Gw2ApiError> {
-        let key = self.api_key.unwrap();
-        if key.is_empty() {
+        if self.api_key.as_deref().is_none_or(str::is_empty) {
             return Err(Gw2ApiError::InvalidApiKey);
         }
-        Ok(build_client(self.lang, Some(key), self.cache_capacity, self.rate_refill_per_second, self.rate_burst, self.schema_version))
+        Ok(self.build_client())
     }
 }
 
-// Shared config methods available on all builder states
-macro_rules! impl_builder_shared {
-    ($($S:ty),+) => {
-        $(impl ClientBuilder<$S> {
-            /// Set the language for API responses.
-            pub fn language(mut self, lang: Language) -> Self {
-                self.lang = lang;
-                self
-            }
+impl<S: AuthState> ClientBuilder<S> {
+    /// Set the language for API responses.
+    pub fn language(mut self, lang: Language) -> Self {
+        self.lang = lang;
+        self
+    }
 
-            /// Set the cache capacity (number of entries). Use `0` to disable caching.
-            pub fn cache_capacity(mut self, capacity: u64) -> Self {
-                self.cache_capacity = capacity;
-                self
-            }
+    /// Set the GW2 API schema version string (ISO 8601 date or `"latest"`).
+    pub fn schema_version(mut self, version: impl Into<String>) -> Self {
+        self.schema_version = Some(version.into());
+        self
+    }
 
-            /// Override the client-side rate limiter parameters.
-            ///
-            /// `refill_per_second` is the steady-state refill rate; `burst` is how many
-            /// requests can be sent back-to-back before throttling begins.
-            ///
-            /// Defaults match the GW2 API: 5 req/s refill, 300 burst.
-            pub fn rate_limit(mut self, refill_per_second: u32, burst: u32) -> Self {
-                self.rate_refill_per_second = refill_per_second;
-                self.rate_burst = burst;
-                self
-            }
+    /// Override the API base URL, e.g. to point at a mock server in tests.
+    /// Default: `https://api.guildwars2.com/v2`.
+    pub fn base_url(mut self, url: impl Into<String>) -> Self {
+        self.base_url = url.into().trim_end_matches('/').to_string();
+        self
+    }
 
-            /// Set the GW2 API schema version string (ISO 8601 date or `"latest"`).
-            pub fn schema_version(mut self, version: impl Into<String>) -> Self {
-                self.schema_version = Some(version.into());
-                self
-            }
-        })+
-    };
-}
+    /// How often a request is retried after a 429, a 502–504 or a network error.
+    /// Default: 5.
+    pub fn max_retries(mut self, retries: u32) -> Self {
+        self.max_retries = retries;
+        self
+    }
 
-impl_builder_shared!(Unauthenticated, Authenticated);
+    /// Per-request timeout. Default: 20 s.
+    pub fn timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
+    }
 
-fn build_client<S: AuthState>(
-    lang: Language,
-    api_key: Option<String>,
-    cache_capacity: u64,
-    rate_refill_per_second: u32,
-    rate_burst: u32,
-    schema_version: Option<String>,
-) -> Gw2Client<S> {
-    let http = Client::builder()
-        .user_agent(USER_AGENT)
-        .build()
-        .expect("failed to build HTTP client");
+    /// Use this static-data cache instead of the process-wide [`ResourceCache::global`].
+    pub fn cache(mut self, cache: Arc<ResourceCache>) -> Self {
+        self.cache = Some(cache);
+        self
+    }
 
-    let state = ClientState {
-        http,
-        base_url: BASE_URL.to_string(),
-        lang,
-        api_key,
-        cache: ResourceCache::new(cache_capacity),
-        rate_limiter: Arc::new(build_rate_limiter(rate_refill_per_second, rate_burst)),
-        schema_version,
-    };
+    /// Give this client its own cache with the given capacity instead of sharing the
+    /// process-wide one. Use `0` to disable caching.
+    pub fn cache_capacity(mut self, capacity: u64) -> Self {
+        self.cache = Some(Arc::new(ResourceCache::new(
+            capacity,
+            Some(crate::cache::DEFAULT_TTL),
+        )));
+        self
+    }
 
-    Gw2Client {
-        inner: Arc::new(state),
-        _auth: PhantomData,
+    /// Use this rate limiter instead of the process-wide [`rate_limit::global`] —
+    /// e.g. a [`RateLimiter::gw2_share`] partition.
+    pub fn rate_limiter(mut self, limiter: Arc<RateLimiter>) -> Self {
+        self.rate_limiter = Some(limiter);
+        self
+    }
+
+    /// Give this client its own rate limiter with the given parameters instead of
+    /// sharing the process-wide one.
+    ///
+    /// `refill_per_second` is the steady-state refill rate; `burst` is how many
+    /// requests can be sent back-to-back before throttling begins.
+    pub fn rate_limit(self, refill_per_second: u32, burst: u32) -> Self {
+        self.rate_limiter(Arc::new(RateLimiter::new(burst, refill_per_second)))
+    }
+
+    fn build_client<T: AuthState>(self) -> Gw2Client<T> {
+        let http = Client::builder()
+            .user_agent(USER_AGENT)
+            .timeout(self.timeout)
+            .build()
+            .expect("failed to build HTTP client");
+
+        let mut state = ClientState {
+            http,
+            base_url: self.base_url,
+            lang: self.lang,
+            api_key: self.api_key,
+            schema_version: self.schema_version,
+            max_retries: self.max_retries,
+            cache: self.cache.unwrap_or_else(ResourceCache::global),
+            cache_scope: Arc::from(""),
+            rate_limiter: self.rate_limiter.unwrap_or_else(rate_limit::global),
+        };
+        state.compute_scope();
+        Gw2Client::from_state(state)
     }
 }

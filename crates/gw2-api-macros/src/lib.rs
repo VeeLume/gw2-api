@@ -770,6 +770,7 @@ fn expand_resource_struct(
 ) -> syn::Result<TokenStream2> {
     let struct_name = &input.ident;
     let id_type_ident = id_kind.as_ident(struct_name);
+    let auth = args.auth;
 
     // Optionally generate the newtype ID.
     let id_newtype = match id_kind {
@@ -963,6 +964,11 @@ fn expand_resource_struct(
         impl ::gw2_api::resource::Resource for #struct_name {
             type Id = #id_type_ident;
             const PATH: &'static str = #path_str;
+            const AUTH: bool = #auth;
+
+            fn id(&self) -> &Self::Id {
+                &self.id
+            }
         }
 
         #patchable_impl
@@ -1380,11 +1386,10 @@ fn expand_endpoint_fn(args: EndpointFnArgs, func: ItemFn) -> syn::Result<TokenSt
         .inputs
         .iter()
         .filter_map(|arg| {
-            if let FnArg::Typed(pat_type) = arg {
-                if let syn::Pat::Ident(pat_ident) = pat_type.pat.as_ref() {
+            if let FnArg::Typed(pat_type) = arg
+                && let syn::Pat::Ident(pat_ident) = pat_type.pat.as_ref() {
                     return Some(&pat_ident.ident);
                 }
-            }
             None
         })
         .collect();
@@ -1395,7 +1400,7 @@ fn expand_endpoint_fn(args: EndpointFnArgs, func: ItemFn) -> syn::Result<TokenSt
         .map(|p| p.to_string())
         .collect::<Vec<_>>()
         .join(", ");
-    let last_seg = path_value.split('/').last().unwrap_or("");
+    let last_seg = path_value.split('/').next_back().unwrap_or("");
     let fn_str = fn_name.to_string();
     // Build chain: if fn_name differs from last path segment, the full path is
     // the handle chain and fn_name is the terminal call. Otherwise strip the last
@@ -1405,7 +1410,7 @@ fn expand_endpoint_fn(args: EndpointFnArgs, func: ItemFn) -> syn::Result<TokenSt
         accessor_chain(&path_value, Some((&fn_str, &args_str)))
     } else {
         // path="commerce/exchange/coins", fn="coins" → ".commerce().exchange().coins(quantity)"
-        let parent_path = path_value.rsplitn(2, '/').nth(1).unwrap_or("");
+        let parent_path = path_value.rsplit_once('/').map(|x| x.0).unwrap_or("");
         if parent_path.is_empty() {
             // Top-level fn, e.g. path="createsubtoken", fn="createsubtoken"
             format!(".{}({})", fn_str, args_str)
