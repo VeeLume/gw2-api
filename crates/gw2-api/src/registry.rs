@@ -58,11 +58,16 @@ pub struct CheckSpec {
 ///
 /// Paths are generalized so drift is counted per field, not per array position:
 /// `dye_slots.3.material` → `dye_slots[].material`.
+/// Fields dropped inside hand-written parsers (item details, tagged unions) are
+/// included too, reported through [`crate::ignored`] as `Type::Variant.field`.
 pub fn parse_value<T: DeserializeOwned>(v: serde_json::Value) -> Result<Vec<String>, String> {
     let mut ignored = Vec::new();
-    serde_ignored::deserialize::<_, _, T>(v, |p| ignored.push(generalize(&p.to_string())))
-        .map(|_| ignored)
-        .map_err(|e| e.to_string())
+    let (result, reported) = crate::ignored::collect(|| {
+        serde_ignored::deserialize::<_, _, T>(v, |p| ignored.push(generalize(&p.to_string())))
+    });
+    result.map_err(|e| e.to_string())?;
+    ignored.extend(reported.iter().map(|p| generalize(p)));
+    Ok(ignored)
 }
 
 fn generalize(path: &str) -> String {
@@ -140,5 +145,27 @@ mod tests {
         ignored.sort();
         assert_eq!(ignored, ["dye_slots[].material", "dye_slots[].material", "extra"]);
         assert!(parse_value::<Skin>(serde_json::json!({ "id": "x" })).is_err());
+    }
+
+    #[test]
+    fn parse_value_sees_into_hand_written_parsers() {
+        // Tagged union: fields a variant does not read.
+        let v = serde_json::json!({
+            "id": 1, "name": "a", "description": "", "requirement": "", "locked_text": "",
+            "type": "ItemSet", "flags": [], "tiers": [],
+            "bits": [{ "type": "Item", "id": 5, "text": "Fishing Hole: Any" }]
+        });
+        let ignored = parse_value::<crate::endpoints::achievements::Achievement>(v).unwrap();
+        assert_eq!(ignored, ["AchievementBit::Item.text"]);
+
+        // Item (custom Deserialize via Value) and its details.
+        let v = serde_json::json!({
+            "id": 1, "chat_link": "x", "name": "x", "type": "Back", "rarity": "Fine", "level": 0,
+            "vendor_value": 0, "new_top_level": 1,
+            "details": { "infusion_slots": [], "attribute_adjustment": 0.0, "new_detail": 2 }
+        });
+        let mut ignored = parse_value::<crate::endpoints::items::Item>(v).unwrap();
+        ignored.sort();
+        assert_eq!(ignored, ["Item.new_top_level", "ItemDetails::Back.new_detail"]);
     }
 }

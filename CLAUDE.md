@@ -83,6 +83,12 @@ Endpoint handle names come from the last path segment and are per module, so `mo
 
 ## Conventions
 
+- **No missing fields.** A model covers every field the API sends and the wiki documents.
+  `check` must report no ignored fields for a finished endpoint.
+- **Every stub or shortcut gets a `// TODO:` comment** saying what is missing, e.g. an id kept as
+  a plain `u32` because its endpoint isn't modelled yet, or a struct with only some fields.
+  Stubs are fine for staying within one endpoint; `grep -rn "TODO" crates` must find all of them.
+
 - `thiserror` for library errors; endpoints return `Result<T, Gw2ApiError>`
 - All API types derive `Debug, Clone, Serialize, Deserialize`
 - Typed IDs are auto-generated newtypes: `pub struct ItemId(pub u32);`

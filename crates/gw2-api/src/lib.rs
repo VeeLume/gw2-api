@@ -33,6 +33,8 @@ pub mod coin;
 pub mod common;
 pub mod endpoints;
 pub mod error;
+#[doc(hidden)]
+pub mod ignored;
 pub mod patches;
 pub mod rate_limit;
 pub mod registry;

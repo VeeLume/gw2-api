@@ -57,7 +57,13 @@ impl<'de> Deserialize<'de> for Item {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let mut v = Value::deserialize(d)?;
         let raw_details = v.as_object_mut().and_then(|m| m.remove("details"));
-        let mut item = Item::deserialize(v).map_err(serde::de::Error::custom)?;
+        let mut item = if crate::ignored::active() {
+            let mut report = |path: serde_ignored::Path| crate::ignored::report(format!("Item.{path}"));
+            Item::deserialize(serde_ignored::Deserializer::new(v, &mut report))
+        } else {
+            Item::deserialize(v)
+        }
+        .map_err(serde::de::Error::custom)?;
         item.details = raw_details
             .filter(|d| !d.is_null())
             .map(|d| ItemDetails::for_item_type(&item.item_type, d))
@@ -238,21 +244,21 @@ impl ItemDetails {
     /// containers, gizmos and upgrade components. Item types without a dedicated
     /// details struct fall back to the inner-type dispatch of the `Deserialize` impl.
     pub fn for_item_type(item_type: &ItemType, v: Value) -> Result<Self, serde_json::Error> {
-        use serde_json::from_value;
+        use crate::ignored::from_value;
         Ok(match item_type {
-            ItemType::Armor => Self::Armor(from_value(v)?),
-            ItemType::Back => Self::Back(from_value(v)?),
-            ItemType::Bag => Self::Bag(from_value(v)?),
-            ItemType::Consumable => Self::Consumable(from_value(v)?),
-            ItemType::Container => Self::Container(from_value(v)?),
-            ItemType::Gathering => Self::Gathering(from_value(v)?),
-            ItemType::Gizmo => Self::Gizmo(from_value(v)?),
-            ItemType::MiniPet => Self::MiniPet(from_value(v)?),
-            ItemType::Tool => Self::Tool(from_value(v)?),
-            ItemType::Trinket => Self::Trinket(from_value(v)?),
-            ItemType::UpgradeComponent => Self::UpgradeComponent(from_value(v)?),
-            ItemType::Weapon => Self::Weapon(from_value(v)?),
-            _ => from_value(v)?,
+            ItemType::Armor => Self::Armor(from_value("ItemDetails::Armor", v)?),
+            ItemType::Back => Self::Back(from_value("ItemDetails::Back", v)?),
+            ItemType::Bag => Self::Bag(from_value("ItemDetails::Bag", v)?),
+            ItemType::Consumable => Self::Consumable(from_value("ItemDetails::Consumable", v)?),
+            ItemType::Container => Self::Container(from_value("ItemDetails::Container", v)?),
+            ItemType::Gathering => Self::Gathering(from_value("ItemDetails::Gathering", v)?),
+            ItemType::Gizmo => Self::Gizmo(from_value("ItemDetails::Gizmo", v)?),
+            ItemType::MiniPet => Self::MiniPet(from_value("ItemDetails::MiniPet", v)?),
+            ItemType::Tool => Self::Tool(from_value("ItemDetails::Tool", v)?),
+            ItemType::Trinket => Self::Trinket(from_value("ItemDetails::Trinket", v)?),
+            ItemType::UpgradeComponent => Self::UpgradeComponent(from_value("ItemDetails::UpgradeComponent", v)?),
+            ItemType::Weapon => Self::Weapon(from_value("ItemDetails::Weapon", v)?),
+            _ => serde_json::from_value(v)?,
         })
     }
 }
@@ -269,7 +275,7 @@ impl<'de> Deserialize<'de> for ItemDetails {
         match type_str {
             // Armor slots
             "Boots" | "Coat" | "Gloves" | "Helm" | "HelmAquatic" | "Leggings" | "Shoulders" => {
-                serde_json::from_value::<ArmorDetails>(v)
+                crate::ignored::from_value::<ArmorDetails>("ItemDetails::Armor", v)
                     .map(ItemDetails::Armor)
                     .map_err(serde::de::Error::custom)
             }
@@ -277,14 +283,14 @@ impl<'de> Deserialize<'de> for ItemDetails {
             "Axe" | "Dagger" | "Focus" | "Greatsword" | "Hammer" | "Harpoon" | "LargeBundle"
             | "LongBow" | "Mace" | "Pistol" | "Rifle" | "Scepter" | "Shield" | "ShortBow"
             | "SmallBundle" | "Speargun" | "Staff" | "Sword" | "Torch" | "Toy" | "ToyTwoHanded"
-            | "Trident" | "Warhorn" => serde_json::from_value::<WeaponDetails>(v)
+            | "Trident" | "Warhorn" => crate::ignored::from_value::<WeaponDetails>("ItemDetails::Weapon", v)
                 .map(ItemDetails::Weapon)
                 .map_err(serde::de::Error::custom),
             // Consumable sub-types
             "AppearanceChange" | "Booze" | "ContractNpc" | "Currency" | "Food" | "Generic"
             | "Halloween" | "Megaphone" | "MountRandomUnlock" | "RandomUnlock"
             | "TeleportToFriend" | "Transmutation" | "Unlock" | "UpgradeRemoval" | "Utility" => {
-                serde_json::from_value::<ConsumableDetails>(v)
+                crate::ignored::from_value::<ConsumableDetails>("ItemDetails::Consumable", v)
                     .map(ItemDetails::Consumable)
                     .map_err(serde::de::Error::custom)
             }
@@ -292,52 +298,52 @@ impl<'de> Deserialize<'de> for ItemDetails {
             "Immediate" => {
                 // ConsumableDetails has many optional fields; ContainerDetails has only "type".
                 // Try Container first (stricter), then Consumable.
-                if let Ok(x) = serde_json::from_value::<ContainerDetails>(v.clone()) {
+                if let Ok(x) = crate::ignored::from_value::<ContainerDetails>("ItemDetails::Container", v.clone()) {
                     Ok(ItemDetails::Container(x))
                 } else {
-                    serde_json::from_value::<ConsumableDetails>(v)
+                    crate::ignored::from_value::<ConsumableDetails>("ItemDetails::Consumable", v)
                         .map(ItemDetails::Consumable)
                         .map_err(serde::de::Error::custom)
                 }
             }
             // Container sub-types (excluding "Immediate" handled above)
-            "GiftBox" | "OpenUI" => serde_json::from_value::<ContainerDetails>(v)
+            "GiftBox" | "OpenUI" => crate::ignored::from_value::<ContainerDetails>("ItemDetails::Container", v)
                 .map(ItemDetails::Container)
                 .map_err(serde::de::Error::custom),
             // Gathering sub-types
             "Bait" | "Fishing" | "Foraging" | "Logging" | "Lure" | "Mining" => {
-                serde_json::from_value::<GatheringDetails>(v)
+                crate::ignored::from_value::<GatheringDetails>("ItemDetails::Gathering", v)
                     .map(ItemDetails::Gathering)
                     .map_err(serde::de::Error::custom)
             }
             // "ContainerKey", "RentableContractNpc", "UnlimitedConsumable" are Gizmo-only.
             "ContainerKey" | "RentableContractNpc" | "UnlimitedConsumable" => {
-                serde_json::from_value::<GizmoDetails>(v)
+                crate::ignored::from_value::<GizmoDetails>("ItemDetails::Gizmo", v)
                     .map(ItemDetails::Gizmo)
                     .map_err(serde::de::Error::custom)
             }
             // Trinket sub-types
-            "Accessory" | "Amulet" | "Ring" => serde_json::from_value::<TrinketDetails>(v)
+            "Accessory" | "Amulet" | "Ring" => crate::ignored::from_value::<TrinketDetails>("ItemDetails::Trinket", v)
                 .map(ItemDetails::Trinket)
                 .map_err(serde::de::Error::custom),
             // Upgrade component sub-types (excluding "Default" handled below)
-            "Gem" | "Rune" | "Sigil" => serde_json::from_value::<UpgradeComponentDetails>(v)
+            "Gem" | "Rune" | "Sigil" => crate::ignored::from_value::<UpgradeComponentDetails>("ItemDetails::UpgradeComponent", v)
                 .map(ItemDetails::UpgradeComponent)
                 .map_err(serde::de::Error::custom),
             // Tool (always "Salvage")
-            "Salvage" => serde_json::from_value::<ToolDetails>(v)
+            "Salvage" => crate::ignored::from_value::<ToolDetails>("ItemDetails::Tool", v)
                 .map(ItemDetails::Tool)
                 .map_err(serde::de::Error::custom),
             // "Default" is shared by Container, Gizmo, and UpgradeComponent.
             // Distinguish by required fields: UpgradeComponent requires "suffix" + "infix_upgrade";
             // Gizmo has optional vendor_ids; Container has only "type".
             "Default" => {
-                if let Ok(x) = serde_json::from_value::<UpgradeComponentDetails>(v.clone()) {
+                if let Ok(x) = crate::ignored::from_value::<UpgradeComponentDetails>("ItemDetails::UpgradeComponent", v.clone()) {
                     Ok(ItemDetails::UpgradeComponent(x))
-                } else if let Ok(x) = serde_json::from_value::<GizmoDetails>(v.clone()) {
+                } else if let Ok(x) = crate::ignored::from_value::<GizmoDetails>("ItemDetails::Gizmo", v.clone()) {
                     Ok(ItemDetails::Gizmo(x))
                 } else {
-                    serde_json::from_value::<ContainerDetails>(v)
+                    crate::ignored::from_value::<ContainerDetails>("ItemDetails::Container", v)
                         .map(ItemDetails::Container)
                         .map_err(serde::de::Error::custom)
                 }
@@ -345,16 +351,16 @@ impl<'de> Deserialize<'de> for ItemDetails {
             // No "type" field — distinguish by unique required fields.
             "" => {
                 if v.get("minipet_id").is_some() {
-                    serde_json::from_value::<MiniPetDetails>(v)
+                    crate::ignored::from_value::<MiniPetDetails>("ItemDetails::MiniPet", v)
                         .map(ItemDetails::MiniPet)
                         .map_err(serde::de::Error::custom)
                 } else if v.get("size").is_some() {
-                    serde_json::from_value::<BagDetails>(v)
+                    crate::ignored::from_value::<BagDetails>("ItemDetails::Bag", v)
                         .map(ItemDetails::Bag)
                         .map_err(serde::de::Error::custom)
                 } else {
                     // Back item — all fields optional
-                    serde_json::from_value::<BackDetails>(v)
+                    crate::ignored::from_value::<BackDetails>("ItemDetails::Back", v)
                         .map(ItemDetails::Back)
                         .map_err(serde::de::Error::custom)
                 }

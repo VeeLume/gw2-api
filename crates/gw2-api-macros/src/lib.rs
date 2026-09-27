@@ -1744,27 +1744,38 @@ fn expand_tagged_union(mut input: DeriveInput) -> syn::Result<TokenStream2> {
                     ));
                 }
                 let ty = &fields.unnamed[0].ty;
+                let context = format!("{name}::{vname}");
                 quote! {
-                    #tag => ::serde_json::from_value::<#ty>(v)
+                    #tag => ::gw2_api::ignored::from_value::<#ty>(#context, v)
                         .map(#name::#vname)
                         .map_err(::serde::de::Error::custom),
                 }
             }
             syn::Fields::Named(fields) => {
+                let context = format!("{name}::{vname}");
+                let keys: Vec<String> = fields
+                    .named
+                    .iter()
+                    .map(|f| f.ident.as_ref().unwrap().to_string())
+                    .collect();
                 let field_exprs: Vec<_> = fields
                     .named
                     .iter()
                     .map(|f| {
                         let fname = f.ident.as_ref().unwrap();
                         let key = fname.to_string();
+                        let field_context = format!("{context}.{key}");
                         quote! {
-                            #fname: ::serde_json::from_value(v[#key].take())
+                            #fname: ::gw2_api::ignored::from_value(#field_context, v[#key].take())
                                 .map_err(::serde::de::Error::custom)?
                         }
                     })
                     .collect();
                 quote! {
-                    #tag => ::std::result::Result::Ok(#name::#vname { #(#field_exprs,)* }),
+                    #tag => {
+                        ::gw2_api::ignored::report_unknown_keys(#context, &v, &[#(#keys),*]);
+                        ::std::result::Result::Ok(#name::#vname { #(#field_exprs,)* })
+                    }
                 }
             }
             syn::Fields::Unit => {
