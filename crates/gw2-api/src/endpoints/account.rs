@@ -25,12 +25,15 @@ pub struct Account {
     /// Seconds played on the account.
     pub age: u64,
     pub name: String,
+    // TODO: WorldId once /v2/worlds is modelled.
     pub world: u32,
     #[serde(default)]
+    // TODO: GuildId once /v2/guild/:id is modelled (also `guild_leader`).
     pub guilds: Vec<String>,
     /// Requires the `guilds` scope; `None` without it.
     #[serde(default)]
     pub guild_leader: Option<Vec<String>>,
+    // TODO: DateTime<Utc> (also `last_modified`).
     pub created: String,
     #[serde(default)]
     pub access: Vec<AccountAccess>,
@@ -58,6 +61,7 @@ pub struct Account {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccountWvw {
     #[serde(default)]
+    // TODO: a WvW team id type once the /v2/wvw endpoints are modelled.
     pub team_id: Option<u32>,
     /// Requires the `progression` scope.
     #[serde(default)]
@@ -99,14 +103,18 @@ pub struct WalletEntry {
 // path "account/bank" → BankEndpoint, account.bank()
 #[gw2_endpoint(path = "account/bank", auth, collection, nullable)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
+// TODO: missing `upgrades`, `upgrade_slot_indices`, `infusions`, `stats { id, attributes }`,
+//       `dyes` (ColorId, /v2/colors) and `bound_to` (character name).
 pub struct BankSlot {
     pub id: ItemId,
     pub count: u32,
     #[serde(default)]
     pub charges: Option<u32>,
     #[serde(default)]
+    // TODO: Option<SkinId>.
     pub skin: Option<u32>,
     #[serde(default)]
+    // TODO: enum Binding { Account, Character }.
     pub binding: Option<String>,
 }
 
@@ -116,9 +124,11 @@ pub struct BankSlot {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MaterialEntry {
     pub id: ItemId,
+    // TODO: a material category id once /v2/materials is modelled.
     pub category: u32,
     pub count: u32,
     #[serde(default)]
+    // TODO: enum Binding { Account, Character }.
     pub binding: Option<String>,
 }
 

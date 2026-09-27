@@ -29,6 +29,7 @@ pub struct Subtoken {
 #[gw2_endpoint(path = "createsubtoken", auth, test_params(expire = "2100-12-31T23:59:59Z", permissions = [SubtokenPermission::Inventories], urls = ["account", "characters"],))]
 pub async fn createsubtoken(
     &self,
+    // TODO: take DateTime<Utc>; omit `permissions`/`urls` when empty.
     expire: &str,
     permissions: impl IntoIterator<Item = SubtokenPermission>,
     urls: impl IntoIterator<Item = impl fmt::Display>,

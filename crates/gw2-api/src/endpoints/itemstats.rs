@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 /// A GW2 itemstat (attribute set, e.g. "Berserker's").
 #[gw2_endpoint(path = "itemstats", id_type = u32, paged)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
+// TODO: stub. Missing `attributes: [{ attribute, multiplier, value }]`.
 pub struct ItemStat {
     pub id: ItemStatId,
     pub name: String,

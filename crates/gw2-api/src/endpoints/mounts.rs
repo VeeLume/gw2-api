@@ -29,7 +29,9 @@ pub struct MountType {
 /// One skill slot of a mount type.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MountSkill {
+    // TODO: SkillId.
     pub id: u32,
+    // TODO: an enum (SkillSlot, shared with /v2/skills).
     pub slot: String,
 }
 
@@ -49,6 +51,8 @@ pub struct MountSkin {
 /// Default dye of one mount skin dye channel.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MountDyeSlot {
+    // TODO: ColorId once /v2/colors is modelled.
     pub color_id: u32,
+    // TODO: enum DyeMaterial { cloth, fur, leather, metal } (lowercase in JSON).
     pub material: String,
 }

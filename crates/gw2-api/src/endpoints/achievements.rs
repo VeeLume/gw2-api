@@ -18,6 +18,7 @@ use crate::endpoints::skins::SkinId;
 // path "achievements" → AchievementsEndpoint, client.achievements()
 #[gw2_endpoint(path = "achievements", id_type = u32, paged)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
+// TODO: missing `icon: Option<String>`.
 pub struct Achievement {
     pub id: AchievementId,
     pub name: String,
@@ -80,7 +81,10 @@ pub struct AchievementTier {
 pub enum AchievementReward {
     Coins { count: u32 },
     Item { id: ItemId, count: u32 },
+    // TODO: `id` is a mastery point id, only resolvable via /v2/account/mastery/points;
+    //       `region` should be an enum (Tyria, Maguuma, Desert, Tundra, Jade, Sky, Wild, Magic).
     Mastery { id: u32, region: String },
+    // TODO: TitleId once /v2/titles is modelled. `Coins.count` could be `Coin`.
     Title { id: u32 },
     Unknown { type_: String },
 }
@@ -91,6 +95,7 @@ pub enum AchievementReward {
 #[derive(Debug, Clone, Serialize)]
 pub enum AchievementBit {
     Text { text: String },
+    // TODO: Item, Minipet and Skin bits drop their optional `text` (e.g. fishing hints).
     Item { id: ItemId },
     Minipet { id: MiniId },
     Skin { id: SkinId },
@@ -116,6 +121,8 @@ pub struct AchievementCategory {
     pub order: u32,
     pub icon: String,
     #[serde(default)]
+    // TODO: entries are objects since schema 2022-03-23: keep `flags`, `level`, `required_access`.
+    //       Also missing `tomorrow` (seasonal daily categories).
     pub achievements: Vec<AchievementId>,
 }
 

@@ -263,6 +263,8 @@ impl ItemDetails {
     }
 }
 
+// TODO: best effort without the outer item type: "Immediate" consumables become Container,
+//       "Default" containers become Gizmo. `Item` uses `for_item_type` and is correct.
 impl<'de> Deserialize<'de> for ItemDetails {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let v = Value::deserialize(d)?;
@@ -393,6 +395,7 @@ pub struct ArmorDetails {
     #[serde(default, deserialize_with = "item_id_or_empty")]
     pub secondary_suffix_item_id: Option<ItemId>,
     #[serde(default)]
+    // TODO: Vec<ItemStatId>.
     pub stat_choices: Vec<u32>,
 }
 
@@ -428,11 +431,13 @@ pub struct BackDetails {
     #[serde(default)]
     pub infix_upgrade: Option<InfixUpgrade>,
     #[serde(default)]
+    // TODO: Option<ItemId>, and one name across the details structs (ArmorDetails uses `suffix_item`).
     pub suffix_item_id: Option<u32>,
     /// Second upgrade slot (two-handed weapons). Absent, `""` on older schemas, or an item id.
     #[serde(default, deserialize_with = "item_id_or_empty")]
     pub secondary_suffix_item_id: Option<ItemId>,
     #[serde(default)]
+    // TODO: Vec<ItemStatId>.
     pub stat_choices: Vec<u32>,
 }
 
@@ -453,15 +458,20 @@ pub struct ConsumableDetails {
     pub description: Option<String>,
     pub duration_ms: Option<u64>,
     pub unlock_type: Option<UnlockType>,
+    // TODO: ColorId once /v2/colors is modelled.
     pub color_id: Option<u32>,
+    // TODO: Option<RecipeId>.
     pub recipe_id: Option<u32>,
     #[serde(default)]
+    // TODO: Vec<RecipeId>.
     pub extra_recipe_ids: Vec<u32>,
+    // TODO: GuildUpgradeId once /v2/guild/upgrades is modelled.
     pub guild_upgrade_id: Option<u32>,
     pub apply_count: Option<u32>,
     pub name: Option<String>,
     pub icon: Option<String>,
     #[serde(default)]
+    // TODO: Vec<SkinId>.
     pub skins: Vec<u32>,
 }
 
@@ -557,8 +567,10 @@ pub struct GizmoDetails {
     #[serde(rename = "type")]
     pub gizmo_type: GizmoType,
     #[serde(default)]
+    // TODO: GuildUpgradeId once /v2/guild/upgrades is modelled.
     pub guild_upgrade_id: Option<u32>,
     #[serde(default)]
+    /// Undocumented; ids of the vendor NPCs the gizmo opens. No API endpoint resolves them.
     pub vendor_ids: Vec<u32>,
 }
 
@@ -607,11 +619,13 @@ pub struct TrinketDetails {
     #[serde(default)]
     pub infix_upgrade: Option<InfixUpgrade>,
     #[serde(default)]
+    // TODO: Option<ItemId>, and one name across the details structs (ArmorDetails uses `suffix_item`).
     pub suffix_item_id: Option<u32>,
     /// Second upgrade slot (two-handed weapons). Absent, `""` on older schemas, or an item id.
     #[serde(default, deserialize_with = "item_id_or_empty")]
     pub secondary_suffix_item_id: Option<ItemId>,
     #[serde(default)]
+    // TODO: Vec<ItemStatId>.
     pub stat_choices: Vec<u32>,
 }
 
@@ -625,6 +639,7 @@ pub enum TrinketType {
 
 // ── Upgrade component ─────────────────────────────────────────────────────────
 
+// TODO: missing `attribute_adjustment` (undocumented, sent on all upgrade components).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpgradeComponentDetails {
     #[serde(rename = "type")]
@@ -701,11 +716,13 @@ pub struct WeaponDetails {
     #[serde(default)]
     pub infix_upgrade: Option<InfixUpgrade>,
     #[serde(default)]
+    // TODO: Option<ItemId>, and one name across the details structs (ArmorDetails uses `suffix_item`).
     pub suffix_item_id: Option<u32>,
     /// Second upgrade slot (two-handed weapons). Absent, `""` on older schemas, or an item id.
     #[serde(default, deserialize_with = "item_id_or_empty")]
     pub secondary_suffix_item_id: Option<ItemId>,
     #[serde(default)]
+    // TODO: Vec<ItemStatId>.
     pub stat_choices: Vec<u32>,
 }
 

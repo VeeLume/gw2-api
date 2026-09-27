@@ -13,6 +13,8 @@ use crate::error::Gw2ApiError;
 /// A crafting recipe.
 #[gw2_endpoint(path = "recipes", id_type = u32, paged)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
+// TODO: missing `chat_link` and `output_upgrade_id` (GuildUpgradeId, /v2/guild/upgrades).
+//       `type` should be an enum RecipeType.
 pub struct Recipe {
     pub id: RecipeId,
     #[serde(rename = "type")]
@@ -42,6 +44,7 @@ pub enum Ingredient {
     Item { id: ItemId, count: u32 },
     Currency { id: CurrencyId, count: u32 },
     /// A guild upgrade id (`/v2/guild/upgrades`, not modelled yet).
+    // TODO: GuildUpgradeId once /v2/guild/upgrades is modelled.
     GuildUpgrade { id: u32, count: u32 },
     Unknown { type_: String },
 }

@@ -24,6 +24,7 @@ use crate::error::Gw2ApiError;
 /// Trading post price listing for an item.
 // path "commerce/prices" → PricesEndpoint, commerce.prices()
 // id_type = ItemId (existing type, no new ID generated)
+// TODO: add `paged`; the endpoint supports page/page_size (not ids=all).
 #[gw2_endpoint(path = "commerce/prices", id_type = ItemId)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ItemPrice {
@@ -43,6 +44,7 @@ pub struct PriceInfo {
 /// A trading post listing (individual buy/sell orders).
 // path "commerce/listings" → ListingsEndpoint, commerce.listings()
 // id_type = ItemId (existing type, no new ID generated)
+// TODO: add `paged`; the endpoint supports page/page_size (not ids=all).
 #[gw2_endpoint(path = "commerce/listings", id_type = ItemId)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Listing {
@@ -80,12 +82,16 @@ pub struct DeliveryItem {
 
 /// Exchange rate info (gems ↔ gold).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+// TODO: `quantity` is gems for /exchange/coins but coins for /exchange/gems;
+//       split the types or make the gems result a `Coin`.
 pub struct ExchangeRate {
     pub coins_per_gem: Coin,
     pub quantity: u32,
 }
 
 /// A trading post transaction (current or historical).
+// TODO: the transaction lists are paginated, but collections fetch one request:
+//       only the first page is returned.
 #[gw2_endpoint(path = "commerce/transactions/current/buys", auth, collection, also(
     "commerce/transactions/current/sells",
     "commerce/transactions/history/buys",
@@ -97,6 +103,7 @@ pub struct Transaction {
     pub item_id: ItemId,
     pub price: Coin,
     pub quantity: u32,
+    // TODO: DateTime<Utc> (also `purchased`).
     pub created: String,
     #[serde(default)]
     pub purchased: Option<String>,
