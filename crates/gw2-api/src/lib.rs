@@ -38,6 +38,9 @@ pub mod rate_limit;
 pub mod registry;
 pub mod resource;
 
+#[cfg(test)]
+mod auth_resource_tests;
+
 pub use client::{
     DEFAULT_SCHEMA_VERSION, Gw2Client, Language,
     auth::{Authenticated, Unauthenticated},

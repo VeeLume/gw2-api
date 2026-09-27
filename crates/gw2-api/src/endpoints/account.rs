@@ -22,21 +22,53 @@ use crate::endpoints::items::ItemId;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Account {
     pub id: String,
+    /// Seconds played on the account.
     pub age: u64,
     pub name: String,
     pub world: u32,
     #[serde(default)]
     pub guilds: Vec<String>,
+    /// Requires the `guilds` scope; `None` without it.
     #[serde(default)]
-    pub guild_leader: Vec<String>,
+    pub guild_leader: Option<Vec<String>>,
     pub created: String,
     #[serde(default)]
     pub access: Vec<AccountAccess>,
     pub commander: bool,
+    /// Requires the `progression` scope.
+    #[serde(default)]
     pub fractal_level: Option<u32>,
+    /// Requires the `progression` scope.
+    #[serde(default)]
     pub daily_ap: Option<u32>,
+    /// Requires the `progression` scope.
+    #[serde(default)]
     pub monthly_ap: Option<u32>,
-    pub wvw_rank: Option<u32>,
+    /// Schema 2024-07-20 moved `wvw_rank` in here, next to the team id from the
+    /// world restructuring.
+    #[serde(default)]
+    pub wvw: Option<AccountWvw>,
+    #[serde(default)]
+    pub last_modified: Option<String>,
+    #[serde(default)]
+    pub build_storage_slots: Option<u32>,
+}
+
+/// World-vs-World part of [`Account`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccountWvw {
+    #[serde(default)]
+    pub team_id: Option<u32>,
+    /// Requires the `progression` scope.
+    #[serde(default)]
+    pub rank: Option<u32>,
+}
+
+impl Account {
+    /// Whether the account owns the given game or expansion.
+    pub fn has_access(&self, access: &AccountAccess) -> bool {
+        self.access.contains(access)
+    }
 }
 
 #[gw2_enum]

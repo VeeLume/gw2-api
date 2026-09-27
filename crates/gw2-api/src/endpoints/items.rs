@@ -10,8 +10,14 @@ use crate::common::{GameType, ItemFlag, Rarity};
 // ── Item ──────────────────────────────────────────────────────────────────────
 
 /// A GW2 item.
+///
+/// `details` is parsed according to the outer `type` (see [`ItemDetails::for_item_type`]),
+/// because several inner detail types (`"Immediate"`, `"Default"`) are shared between
+/// item categories. `remote = "Self"` turns the derives into inherent functions that
+/// the hand-written trait impls below wrap.
 #[gw2_endpoint(path = "items", id_type = u32, paged)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(remote = "Self")]
 pub struct Item {
     pub id: ItemId,
     pub chat_link: String,
@@ -39,6 +45,26 @@ pub struct Item {
     /// Type-specific details, keyed by `item_type`.
     #[serde(default)]
     pub details: Option<ItemDetails>,
+}
+
+impl Serialize for Item {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        Item::serialize(self, s)
+    }
+}
+
+impl<'de> Deserialize<'de> for Item {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let mut v = Value::deserialize(d)?;
+        let raw_details = v.as_object_mut().and_then(|m| m.remove("details"));
+        let mut item = Item::deserialize(v).map_err(serde::de::Error::custom)?;
+        item.details = raw_details
+            .filter(|d| !d.is_null())
+            .map(|d| ItemDetails::for_item_type(&item.item_type, d))
+            .transpose()
+            .map_err(serde::de::Error::custom)?;
+        Ok(item)
+    }
 }
 
 /// Item type discriminator (from the item's top-level `"type"` field).
@@ -193,6 +219,33 @@ pub enum ItemDetails {
     Weapon(WeaponDetails),
     /// An unrecognised detail object returned by the API.
     Unknown(Value),
+}
+
+impl ItemDetails {
+    /// Parse a `details` object for an item of the given outer type.
+    ///
+    /// This is how [`Item`] parses its details. The inner `"type"` alone is ambiguous:
+    /// `"Immediate"` is used by both consumables and containers, `"Default"` by
+    /// containers, gizmos and upgrade components. Item types without a dedicated
+    /// details struct fall back to the inner-type dispatch of the `Deserialize` impl.
+    pub fn for_item_type(item_type: &ItemType, v: Value) -> Result<Self, serde_json::Error> {
+        use serde_json::from_value;
+        Ok(match item_type {
+            ItemType::Armor => Self::Armor(from_value(v)?),
+            ItemType::Back => Self::Back(from_value(v)?),
+            ItemType::Bag => Self::Bag(from_value(v)?),
+            ItemType::Consumable => Self::Consumable(from_value(v)?),
+            ItemType::Container => Self::Container(from_value(v)?),
+            ItemType::Gathering => Self::Gathering(from_value(v)?),
+            ItemType::Gizmo => Self::Gizmo(from_value(v)?),
+            ItemType::MiniPet => Self::MiniPet(from_value(v)?),
+            ItemType::Tool => Self::Tool(from_value(v)?),
+            ItemType::Trinket => Self::Trinket(from_value(v)?),
+            ItemType::UpgradeComponent => Self::UpgradeComponent(from_value(v)?),
+            ItemType::Weapon => Self::Weapon(from_value(v)?),
+            _ => from_value(v)?,
+        })
+    }
 }
 
 impl<'de> Deserialize<'de> for ItemDetails {
@@ -815,5 +868,38 @@ mod tests {
             ItemDetails::Tool(t) => assert_eq!(t.charges, 25),
             other => panic!("expected Tool, got {:?}", other),
         }
+    }
+
+    fn item_json(item_type: &str, details: &str) -> String {
+        format!(
+            r#"{{"id":1,"chat_link":"[&AgEBAAAA]","name":"x","type":"{item_type}","rarity":"Fine","level":0,"vendor_value":0,"details":{details}}}"#
+        )
+    }
+
+    #[test]
+    fn immediate_consumable_is_not_a_container() {
+        let json = item_json("Consumable", r#"{"type":"Immediate","description":"Grants a buff","duration_ms":1000}"#);
+        let item: Item = serde_json::from_str(&json).unwrap();
+        match item.details {
+            Some(ItemDetails::Consumable(c)) => assert_eq!(c.duration_ms, Some(1000)),
+            other => panic!("expected Consumable, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn default_container_is_not_a_gizmo() {
+        let item: Item = serde_json::from_str(&item_json("Container", r#"{"type":"Default"}"#)).unwrap();
+        assert!(matches!(item.details, Some(ItemDetails::Container(_))), "{:?}", item.details);
+
+        let item: Item = serde_json::from_str(&item_json("Gizmo", r#"{"type":"Default","vendor_ids":[1]}"#)).unwrap();
+        assert!(matches!(item.details, Some(ItemDetails::Gizmo(_))), "{:?}", item.details);
+    }
+
+    #[test]
+    fn item_round_trips_through_serialize() {
+        let item: Item = serde_json::from_str(&item_json("Container", r#"{"type":"Default"}"#)).unwrap();
+        let back: Item = serde_json::from_value(serde_json::to_value(&item).unwrap()).unwrap();
+        assert_eq!(back.id, item.id);
+        assert!(matches!(back.details, Some(ItemDetails::Container(_))));
     }
 }

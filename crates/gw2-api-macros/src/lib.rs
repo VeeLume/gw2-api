@@ -771,6 +771,30 @@ fn expand_resource_struct(
     let struct_name = &input.ident;
     let id_type_ident = id_kind.as_ident(struct_name);
     let auth = args.auth;
+    // `auth` resources are only reachable from an authenticated client.
+    let (state_generics, state_ty) = if auth {
+        (quote! {}, quote! { ::gw2_api::client::auth::Authenticated })
+    } else {
+        (quote! { S: ::gw2_api::client::auth::AuthState }, quote! { S })
+    };
+    // The client the registry smoke tests call through.
+    let (registry_single_client, registry_full_client) = if auth {
+        (
+            quote! {
+                let client = auth.ok_or_else(|| ::std::string::String::from("requires an API key"))?;
+            },
+            quote! {
+                let ::std::option::Option::Some(client) = auth else {
+                    return ::gw2_api::registry::FullFetchResult {
+                        ok_count: 0,
+                        errors: ::std::vec![(::std::string::String::from("auth"), ::std::string::String::from("requires an API key"))],
+                    };
+                };
+            },
+        )
+    } else {
+        (quote! { let client = unauth; }, quote! { let client = unauth; })
+    };
 
     // Optionally generate the newtype ID.
     let id_newtype = match id_kind {
@@ -840,9 +864,9 @@ fn expand_resource_struct(
                 }
                 impl ::gw2_api::resource::ResourceId for #id_name {}
                 impl #id_name {
-                    pub fn get<S: ::gw2_api::client::auth::AuthState>(
+                    pub fn get<#state_generics>(
                         &self,
-                        client: &::gw2_api::client::Gw2Client<S>,
+                        client: &::gw2_api::client::Gw2Client<#state_ty>,
                     ) -> impl ::std::future::Future<Output = ::std::result::Result<#struct_name, ::gw2_api::error::Gw2ApiError>> + Send
                     where
                         #struct_name: ::gw2_api::resource::Patchable,
@@ -898,7 +922,7 @@ fn expand_resource_struct(
             let mut ok_count: usize = 0;
             let mut errors: ::std::vec::Vec<(::std::string::String, ::std::string::String)> = ::std::vec::Vec::new();
             let opts = ::gw2_api::resource::PageOptions::default().page_size(200);
-            let mut stream = ::std::pin::pin!(unauth.pages::<#struct_name>(opts));
+            let mut stream = ::std::pin::pin!(client.pages::<#struct_name>(opts));
             let mut idx: usize = 0;
             while let ::std::option::Option::Some(result) = stream.next().await {
                 match result {
@@ -913,14 +937,14 @@ fn expand_resource_struct(
         }
     } else {
         quote! {
-            let ids = match unauth.list_ids::<#struct_name>().await {
+            let ids = match client.list_ids::<#struct_name>().await {
                 ::std::result::Result::Ok(v) => v,
                 ::std::result::Result::Err(e) => return ::gw2_api::registry::FullFetchResult {
                     ok_count: 0,
                     errors: ::std::vec![(::std::string::String::from("list_ids"), e.to_string())],
                 },
             };
-            match unauth.get_many::<#struct_name>(ids).await {
+            match client.get_many::<#struct_name>(ids).await {
                 ::std::result::Result::Ok(items) => ::gw2_api::registry::FullFetchResult {
                     ok_count: items.len(),
                     errors: ::std::vec::Vec::new(),
@@ -938,15 +962,15 @@ fn expand_resource_struct(
     } else {
         match parent_endpoint {
             Some(parent) => quote! {
-                impl<'c, S: ::gw2_api::client::auth::AuthState> #parent<'c, S> {
-                    pub fn #accessor_method(&self) -> #endpoint_name<'_, S> {
+                impl<'c, #state_generics> #parent<'c, #state_ty> {
+                    pub fn #accessor_method(&self) -> #endpoint_name<'_, #state_ty> {
                         #endpoint_name(self.0)
                     }
                 }
             },
             None => quote! {
-                impl<S: ::gw2_api::client::auth::AuthState> ::gw2_api::client::Gw2Client<S> {
-                    pub fn #accessor_method(&self) -> #endpoint_name<'_, S> {
+                impl<#state_generics> ::gw2_api::client::Gw2Client<#state_ty> {
+                    pub fn #accessor_method(&self) -> #endpoint_name<'_, #state_ty> {
                         #endpoint_name(self)
                     }
                 }
@@ -977,22 +1001,24 @@ fn expand_resource_struct(
         #[::linkme::distributed_slice(::gw2_api::registry::ENDPOINTS)]
         static #registry_static: ::gw2_api::registry::EndpointEntry = ::gw2_api::registry::EndpointEntry {
             path: #path_str,
-            auth: false,
+            auth: #auth,
             type_name: #type_name_str,
             call: #call_str,
-            single: |unauth, _auth| {
+            single: |unauth, auth| {
                 ::std::boxed::Box::pin(async move {
-                    let ids = unauth.list_ids::<#struct_name>().await
+                    #registry_single_client
+                    let ids = client.list_ids::<#struct_name>().await
                         .map_err(|e| format!("list_ids: {e}"))?;
                     let id = ids.into_iter().next()
                         .ok_or_else(|| ::std::string::String::from("endpoint returned no IDs"))?;
-                    unauth.get::<#struct_name>(id).await
+                    client.get::<#struct_name>(id).await
                         .map(|_| ())
                         .map_err(|e| format!("get: {e}"))
                 })
             },
-            full: |unauth, _auth| {
+            full: |unauth, auth| {
                 ::std::boxed::Box::pin(async move {
+                    #registry_full_client
                     #resource_full_body
                 })
             },
@@ -1002,7 +1028,7 @@ fn expand_resource_struct(
             pub(crate) &'c ::gw2_api::client::Gw2Client<S>,
         );
 
-        impl<'c, S: ::gw2_api::client::auth::AuthState> #endpoint_name<'c, S> {
+        impl<'c, #state_generics> #endpoint_name<'c, #state_ty> {
             /// Fetch a single resource by ID.
             pub async fn get(
                 &self,
