@@ -35,16 +35,16 @@ pub struct Mini {
 
 impl From<RawMini> for Mini {
     fn from(mut r: RawMini) -> Self {
-        if r.name == "((208738))" {
-            if let Some((fixed_name, fixed_item)) = BUGGED_NAMES.get(&r.id).copied() {
-                r.name = fixed_name.to_string();
-                r.unlock_item = Some(fixed_item);
-            }
+        if r.name == "((208738))"
+            && let Some((fixed_name, fixed_item)) = BUGGED_NAMES.get(&r.id).copied()
+        {
+            r.name = fixed_name.to_string();
+            r.unlock_item = Some(fixed_item);
         }
-        if r.unlock_item == Some(6) {
-            if let Some((_, fixed_item)) = BUGGED_NAMES.get(&r.id).copied() {
-                r.unlock_item = Some(fixed_item);
-            }
+        if r.unlock_item == Some(6)
+            && let Some((_, fixed_item)) = BUGGED_NAMES.get(&r.id).copied()
+        {
+            r.unlock_item = Some(fixed_item);
         }
         Mini {
             id: r.id,

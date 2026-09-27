@@ -20,7 +20,7 @@ pub struct MountSkin {
 }
 
 crate::ghost_id!(MountSkin, "mounts/skins", i32);
-crate::cached_resource!(MountType, 128);
+crate::cached_resource!(MountSkin, 128);
 crate::id_type!(MountSkin => MountSkinId);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,5 +39,5 @@ pub struct MountType {
 }
 
 crate::ghost_id!(MountType, "mounts/types", String);
-crate::cached_resource!(MountSkin, 128);
+crate::cached_resource!(MountType, 128);
 crate::id_type!(MountType => MountTypeId);

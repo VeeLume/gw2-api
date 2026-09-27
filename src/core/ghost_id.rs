@@ -43,29 +43,42 @@ macro_rules! ghost_id {
 #[macro_export]
 macro_rules! id_type {
     ($owner:ty => $name:ident) => {
-        #[derive(serde::Serialize, serde::Deserialize, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        #[derive(
+            serde::Serialize, serde::Deserialize, Clone, PartialEq, Eq, PartialOrd, Ord, Hash,
+        )]
         #[serde(transparent)]
-        pub struct $name(
-            pub < $owner as $crate::core::ghost_id::Identifiable >::Id
-        );
+        pub struct $name(pub <$owner as $crate::core::ghost_id::Identifiable>::Id);
 
         impl $name {
             #[inline]
-            pub fn id(&self) -> &< $owner as $crate::core::ghost_id::Identifiable >::Id {
+            pub fn id(&self) -> &<$owner as $crate::core::ghost_id::Identifiable>::Id {
                 &self.0
             }
 
             #[inline]
-            pub fn into_inner(self) -> < $owner as $crate::core::ghost_id::Identifiable >::Id {
+            pub fn into_inner(self) -> <$owner as $crate::core::ghost_id::Identifiable>::Id {
                 self.0
             }
 
             /// Fetch the referenced owner using the owner's cache.
             /// Requires that the owner used `cached_resource!`.
-            pub async fn get(&self, force: bool)
-                -> Result<std::sync::Arc<$owner>, $crate::api::client::ApiError>
-            {
+            ///
+            /// Typed ids only ever point at static game data, which is why this
+            /// convenience survives the static/account split unchanged.
+            pub async fn get(
+                &self,
+                force: bool,
+            ) -> Result<std::sync::Arc<$owner>, $crate::api::client::ApiError> {
                 <$owner>::get(self.0.clone(), force).await
+            }
+
+            /// Same, against an explicit client.
+            pub async fn get_with(
+                &self,
+                client: &$crate::api::client::ApiClient,
+                force: bool,
+            ) -> Result<std::sync::Arc<$owner>, $crate::api::client::ApiError> {
+                <$owner>::get_with(client, self.0.clone(), force).await
             }
         }
 
@@ -82,27 +95,37 @@ macro_rules! id_type {
         }
 
         // Convenience conversions
-        impl From<< $owner as $crate::core::ghost_id::Identifiable >::Id> for $name {
-            fn from(v: < $owner as $crate::core::ghost_id::Identifiable >::Id) -> Self { Self(v) }
+        impl From<<$owner as $crate::core::ghost_id::Identifiable>::Id> for $name {
+            fn from(v: <$owner as $crate::core::ghost_id::Identifiable>::Id) -> Self {
+                Self(v)
+            }
         }
-        impl From<$name> for < $owner as $crate::core::ghost_id::Identifiable >::Id {
-            fn from(v: $name) -> Self { v.0 }
+        impl From<$name> for <$owner as $crate::core::ghost_id::Identifiable>::Id {
+            fn from(v: $name) -> Self {
+                v.0
+            }
         }
 
         // AsRef / Borrow make it easy to pass to APIs expecting the raw id type
-        impl AsRef<< $owner as $crate::core::ghost_id::Identifiable >::Id> for $name {
-            fn as_ref(&self) -> &< $owner as $crate::core::ghost_id::Identifiable >::Id { &self.0 }
+        impl AsRef<<$owner as $crate::core::ghost_id::Identifiable>::Id> for $name {
+            fn as_ref(&self) -> &<$owner as $crate::core::ghost_id::Identifiable>::Id {
+                &self.0
+            }
         }
-        impl std::borrow::Borrow<< $owner as $crate::core::ghost_id::Identifiable >::Id> for $name {
-            fn borrow(&self) -> &< $owner as $crate::core::ghost_id::Identifiable >::Id { &self.0 }
+        impl std::borrow::Borrow<<$owner as $crate::core::ghost_id::Identifiable>::Id> for $name {
+            fn borrow(&self) -> &<$owner as $crate::core::ghost_id::Identifiable>::Id {
+                &self.0
+            }
         }
 
         // Default if inner supports it
         impl Default for $name
         where
-            < $owner as $crate::core::ghost_id::Identifiable >::Id: Default
+            <$owner as $crate::core::ghost_id::Identifiable>::Id: Default,
         {
-            fn default() -> Self { Self(Default::default()) }
+            fn default() -> Self {
+                Self(Default::default())
+            }
         }
     };
 }
