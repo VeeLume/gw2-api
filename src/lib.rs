@@ -22,7 +22,9 @@ pub mod core {
     pub mod ghost_id;
 }
 pub mod models {
+    pub mod account;
     pub mod build;
+    pub mod currencies;
     pub mod minis;
     pub mod mounts;
     pub mod tokeninfo;
@@ -39,6 +41,8 @@ pub mod prelude {
     pub use crate::core::base::Base;
     pub use crate::core::ghost::Ghost;
     pub use crate::core::ghost_id::{GhostId, Identifiable};
+    pub use crate::models::account::{Access, Account, WalletEntry};
+    pub use crate::models::currencies::{Currency, CurrencyId};
     pub use crate::models::tokeninfo::{Permission, TokenInfo};
     // macros are #[macro_export], available at crate root
 }

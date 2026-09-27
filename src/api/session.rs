@@ -14,6 +14,7 @@ use std::sync::Arc;
 
 use crate::api::client::{ApiClient, ApiError, Language};
 use crate::api::limiter::RateLimiter;
+use crate::models::account::{Account, WalletEntry};
 use crate::models::tokeninfo::{Permission, TokenInfo};
 
 /// An authenticated handle for one API key.
@@ -87,5 +88,24 @@ impl Gw2Session {
         let info = self.tokeninfo().await?;
         info.require(perm)?;
         Ok(info)
+    }
+
+    /// The account behind this key. Needs the `account` scope; the
+    /// progression and guild-leader fields are only filled in when the key
+    /// also carries `progression` / `guilds`.
+    ///
+    /// Uncached, like `tokeninfo`: the API already caches account endpoints
+    /// server-side for a few minutes, so a second layer here would only make
+    /// the data staler.
+    pub async fn account(&self) -> Result<Account, ApiError> {
+        self.client.get_json::<Account>("account", &[]).await
+    }
+
+    /// Currency balances. Needs `account` and `wallet`; a key without
+    /// `wallet` fails with `ApiError::MissingPermission("wallet")`.
+    pub async fn wallet(&self) -> Result<Vec<WalletEntry>, ApiError> {
+        self.client
+            .get_json::<Vec<WalletEntry>>("account/wallet", &[])
+            .await
     }
 }

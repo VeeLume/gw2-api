@@ -13,7 +13,7 @@ use thiserror::Error;
 use crate::api::limiter::{self, RateLimiter};
 
 pub const DEFAULT_BASE: &str = "https://api.guildwars2.com/v2/";
-pub const DEFAULT_SCHEMA_VERSION: &str = "2024-06-08T00:00:00Z";
+pub const DEFAULT_SCHEMA_VERSION: &str = "2025-08-29T01:00:00.000Z";
 
 #[derive(Debug, Error)]
 pub enum ApiError {
@@ -191,7 +191,8 @@ impl ApiClient {
                     }
                     match status.as_u16() {
                         400 => return Err(ApiError::BadRequest(body)),
-                        401 | 403 => return Err(ApiError::InvalidToken(body)),
+                        401 => return Err(ApiError::InvalidToken(body)),
+                        403 => return Err(forbidden(body)),
                         404 => return Err(ApiError::NotFound),
                         429 => {
                             // The server just proved our bucket model wrong.
@@ -225,6 +226,26 @@ impl ApiClient {
             }
         }
         Err(last_err.unwrap_or_else(|| ApiError::Other("Max retries exceeded".into())))
+    }
+}
+
+/// Split a 403 into "valid key, missing scope" and "bad key".
+///
+/// The API answers a key that lacks a scope with
+/// `{"text": "requires scope wallet"}`. Reporting that as `InvalidToken` would
+/// send the user off to replace a key that is fine and only needs one more box
+/// ticked.
+fn forbidden(body: String) -> ApiError {
+    #[derive(serde::Deserialize)]
+    struct ErrorText {
+        text: String,
+    }
+    let scope = serde_json::from_str::<ErrorText>(&body)
+        .ok()
+        .and_then(|e| e.text.strip_prefix("requires scope ").map(str::to_owned));
+    match scope {
+        Some(s) => ApiError::MissingPermission(s),
+        None => ApiError::InvalidToken(body),
     }
 }
 

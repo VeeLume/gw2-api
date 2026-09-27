@@ -213,19 +213,31 @@ where
     }
 
     async fn paginate_all(&self, client: &ApiClient) -> Result<Vec<T>, ApiError> {
+        const PAGE_SIZE: usize = 200;
         let mut out = Vec::new();
         let mut page = 0usize;
         loop {
-            let batch: Vec<T> = client
+            // The API never answers an empty page: one past the end is a 400
+            // ("page out of range"), so that is the end marker, not an error.
+            let batch: Vec<T> = match client
                 .get_json(
                     T::URL,
-                    &[("page", page.to_string()), ("page_size", 200.to_string())],
+                    &[
+                        ("page", page.to_string()),
+                        ("page_size", PAGE_SIZE.to_string()),
+                    ],
                 )
-                .await?;
-            if batch.is_empty() {
+                .await
+            {
+                Ok(b) => b,
+                Err(ApiError::BadRequest(_)) if page > 0 => break,
+                Err(e) => return Err(e),
+            };
+            let short = batch.len() < PAGE_SIZE;
+            out.extend(batch);
+            if short {
                 break;
             }
-            out.extend(batch);
             page += 1;
         }
         Ok(out)

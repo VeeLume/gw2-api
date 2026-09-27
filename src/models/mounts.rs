@@ -15,7 +15,9 @@ pub struct MountSkin {
     pub id: i32,
     pub name: String,
     pub icon: String,
-    pub mount: MountTypeId,
+    /// Links the skin to its `MountType::guid`. Schema 2025-08-29 removed the
+    /// old `mount` field (the type's string id) in favour of this.
+    pub mount_guid: String,
     pub dye_slots: Vec<Dye>,
 }
 
@@ -32,6 +34,8 @@ pub struct MountSkill {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MountType {
     pub id: String,
+    /// What `MountSkin::mount_guid` points at.
+    pub guid: String,
     pub name: String,
     pub default_skin: MountSkinId,
     pub skins: Vec<MountSkinId>,
