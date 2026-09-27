@@ -36,7 +36,13 @@ pub struct Achievement {
     pub rewards: Vec<AchievementReward>,
     #[serde(default)]
     pub bits: Vec<AchievementBit>,
-    pub point_cap: Option<u32>,
+    /// The maximum AP an achievement flagged `Repeatable` can award.
+    ///
+    /// Signed because the API sends `-1` on some `Repeatable` achievements (55 as of
+    /// 2026-09-27, e.g. 7804). The meaning of `-1` is undocumented; presumably
+    /// "no cap". Kept raw rather than guessed.
+    #[serde(default)]
+    pub point_cap: Option<i32>,
 }
 
 #[gw2_enum]
@@ -79,6 +85,8 @@ pub enum AchievementReward {
     Unknown { type_: String },
 }
 
+/// One step of an achievement. Its position in `bits` is the index that
+/// `/v2/account/achievements` reports progress against, so blank bits are kept.
 #[gw2_tagged_union]
 #[derive(Debug, Clone, Serialize)]
 pub enum AchievementBit {
@@ -86,6 +94,12 @@ pub enum AchievementBit {
     Item { id: ItemId },
     Minipet { id: MiniId },
     Skin { id: SkinId },
+    /// A blank `{}` object. Documented: achievements that track recipe unlocks
+    /// omit the details (e.g. 5585 "Dragon Ice Infuser").
+    /// <https://github.com/arenanet/api-cdi/issues/670>,
+    /// <https://github.com/gw2-api/issues/issues/15>
+    #[no_type]
+    Blank,
     Unknown { type_: String },
 }
 
@@ -116,4 +130,30 @@ pub struct AchievementGroup {
     pub order: u32,
     #[serde(default)]
     pub categories: Vec<AchievementCategoryId>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn achievement(extra: &str) -> String {
+        format!(
+            r#"{{"id":1,"name":"a","description":"","requirement":"","locked_text":"","type":"ItemSet","flags":["Repeatable"],"tiers":[]{extra}}}"#
+        )
+    }
+
+    #[test]
+    fn negative_point_cap_parses() {
+        let a: Achievement = serde_json::from_str(&achievement(r#","point_cap":-1"#)).unwrap();
+        assert_eq!(a.point_cap, Some(-1));
+    }
+
+    #[test]
+    fn blank_bits_keep_their_positions() {
+        let a: Achievement =
+            serde_json::from_str(&achievement(r#","bits":[{},{"type":"Item","id":5},{}]"#)).unwrap();
+        assert!(matches!(a.bits[0], AchievementBit::Blank));
+        assert!(matches!(a.bits[1], AchievementBit::Item { ref id } if id.0 == 5));
+        assert!(matches!(a.bits[2], AchievementBit::Blank));
+    }
 }

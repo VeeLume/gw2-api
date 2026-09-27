@@ -190,6 +190,15 @@ pub struct InfixBuff {
     pub description: Option<String>,
 }
 
+/// `Option<ItemId>` that also accepts `""` as `None`.
+fn item_id_or_empty<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<ItemId>, D::Error> {
+    match Option::<Value>::deserialize(d)? {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(s)) if s.is_empty() => Ok(None),
+        Some(v) => ItemId::deserialize(v).map(Some).map_err(serde::de::Error::custom),
+    }
+}
+
 // ── ItemDetails ───────────────────────────────────────────────────────────────
 
 /// Type-specific item details.
@@ -374,8 +383,9 @@ pub struct ArmorDetails {
     pub infix_upgrade: Option<InfixUpgrade>,
     #[serde(default, rename = "suffix_item_id")]
     pub suffix_item: Option<ItemId>,
-    #[serde(default)]
-    pub secondary_suffix_item_id: String,
+    /// Second upgrade slot (two-handed weapons). Absent, `""` on older schemas, or an item id.
+    #[serde(default, deserialize_with = "item_id_or_empty")]
+    pub secondary_suffix_item_id: Option<ItemId>,
     #[serde(default)]
     pub stat_choices: Vec<u32>,
 }
@@ -413,8 +423,9 @@ pub struct BackDetails {
     pub infix_upgrade: Option<InfixUpgrade>,
     #[serde(default)]
     pub suffix_item_id: Option<u32>,
-    #[serde(default)]
-    pub secondary_suffix_item_id: String,
+    /// Second upgrade slot (two-handed weapons). Absent, `""` on older schemas, or an item id.
+    #[serde(default, deserialize_with = "item_id_or_empty")]
+    pub secondary_suffix_item_id: Option<ItemId>,
     #[serde(default)]
     pub stat_choices: Vec<u32>,
 }
@@ -585,8 +596,9 @@ pub struct TrinketDetails {
     pub infix_upgrade: Option<InfixUpgrade>,
     #[serde(default)]
     pub suffix_item_id: Option<u32>,
-    #[serde(default)]
-    pub secondary_suffix_item_id: String,
+    /// Second upgrade slot (two-handed weapons). Absent, `""` on older schemas, or an item id.
+    #[serde(default, deserialize_with = "item_id_or_empty")]
+    pub secondary_suffix_item_id: Option<ItemId>,
     #[serde(default)]
     pub stat_choices: Vec<u32>,
 }
@@ -678,8 +690,9 @@ pub struct WeaponDetails {
     pub infix_upgrade: Option<InfixUpgrade>,
     #[serde(default)]
     pub suffix_item_id: Option<u32>,
-    #[serde(default)]
-    pub secondary_suffix_item_id: String,
+    /// Second upgrade slot (two-handed weapons). Absent, `""` on older schemas, or an item id.
+    #[serde(default, deserialize_with = "item_id_or_empty")]
+    pub secondary_suffix_item_id: Option<ItemId>,
     #[serde(default)]
     pub stat_choices: Vec<u32>,
 }
@@ -901,5 +914,19 @@ mod tests {
         let back: Item = serde_json::from_value(serde_json::to_value(&item).unwrap()).unwrap();
         assert_eq!(back.id, item.id);
         assert!(matches!(back.details, Some(ItemDetails::Container(_))));
+    }
+
+    #[test]
+    fn secondary_suffix_is_an_item_id_or_empty() {
+        let two_sigils = r#"{"type":"LongBow","damage_type":"Physical","min_power":920,"max_power":1080,"defense":0,"infusion_slots":[],"attribute_adjustment":682.88,"suffix_item_id":24615,"secondary_suffix_item_id":24599}"#;
+        match serde_json::from_str::<ItemDetails>(two_sigils).unwrap() {
+            ItemDetails::Weapon(w) => assert_eq!(w.secondary_suffix_item_id.map(|i| i.0), Some(24599)),
+            other => panic!("expected Weapon, got {other:?}"),
+        }
+        let empty = r#"{"type":"Ring","infusion_slots":[],"attribute_adjustment":0.0,"secondary_suffix_item_id":""}"#;
+        match serde_json::from_str::<ItemDetails>(empty).unwrap() {
+            ItemDetails::Trinket(t) => assert!(t.secondary_suffix_item_id.is_none()),
+            other => panic!("expected Trinket, got {other:?}"),
+        }
     }
 }

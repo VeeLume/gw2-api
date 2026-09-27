@@ -1682,6 +1682,8 @@ pub fn gw2_method(_args: TokenStream, _input: TokenStream) -> TokenStream {
 /// - **Tuple variants** (`Foo(BarDetails)`) — the whole JSON object is deserialized
 ///   into `BarDetails` via `serde_json::from_value`.
 /// - The JSON tag string is the variant name verbatim (e.g. `Coins` → `"Coins"`).
+/// - A JSON object without `"type"` is an error, unless one **unit** variant is
+///   marked `#[no_type]`: then that variant is returned (for documented blank objects).
 #[proc_macro_attribute]
 pub fn gw2_tagged_union(_args: TokenStream, input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -1690,7 +1692,32 @@ pub fn gw2_tagged_union(_args: TokenStream, input: TokenStream) -> TokenStream {
         .into()
 }
 
-fn expand_tagged_union(input: DeriveInput) -> syn::Result<TokenStream2> {
+fn expand_tagged_union(mut input: DeriveInput) -> syn::Result<TokenStream2> {
+    // `#[no_type]` on one unit variant: the value for objects without a `"type"` field
+    // (e.g. the blank achievement bits of recipe-unlock achievements). The marker is
+    // not a real attribute, so strip it from the re-emitted enum.
+    let mut no_type_variant: Option<Ident> = None;
+    if let syn::Data::Enum(ref mut data) = input.data {
+        for variant in &mut data.variants {
+            let before = variant.attrs.len();
+            variant.attrs.retain(|a| !a.path().is_ident("no_type"));
+            if variant.attrs.len() != before {
+                if !matches!(variant.fields, syn::Fields::Unit) {
+                    return Err(syn::Error::new_spanned(
+                        &variant.ident,
+                        "#[no_type] must be on a unit variant",
+                    ));
+                }
+                if no_type_variant.replace(variant.ident.clone()).is_some() {
+                    return Err(syn::Error::new_spanned(
+                        &variant.ident,
+                        "only one variant can be #[no_type]",
+                    ));
+                }
+            }
+        }
+    }
+
     let syn::Data::Enum(ref data) = input.data else {
         return Err(syn::Error::new_spanned(
             &input.ident,
@@ -1703,7 +1730,7 @@ fn expand_tagged_union(input: DeriveInput) -> syn::Result<TokenStream2> {
     let mut arms = Vec::new();
     for variant in &data.variants {
         let vname = &variant.ident;
-        if vname == "Unknown" {
+        if vname == "Unknown" || no_type_variant.as_ref() == Some(vname) {
             continue;
         }
         let tag = vname.to_string();
@@ -1750,6 +1777,11 @@ fn expand_tagged_union(input: DeriveInput) -> syn::Result<TokenStream2> {
         arms.push(arm);
     }
 
+    let missing_type = match &no_type_variant {
+        Some(v) => quote! { return ::std::result::Result::Ok(#name::#v) },
+        None => quote! { return ::std::result::Result::Err(::serde::de::Error::missing_field("type")) },
+    };
+
     Ok(quote! {
         #input
 
@@ -1757,10 +1789,10 @@ fn expand_tagged_union(input: DeriveInput) -> syn::Result<TokenStream2> {
             fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> ::std::result::Result<Self, D::Error> {
                 #[allow(unused_mut)]
                 let mut v = ::serde_json::Value::deserialize(d)?;
-                let type_str = v
-                    .get("type")
-                    .and_then(|t| t.as_str())
-                    .ok_or_else(|| ::serde::de::Error::missing_field("type"))?;
+                let type_str = match v.get("type").and_then(|t| t.as_str()) {
+                    ::std::option::Option::Some(t) => t,
+                    ::std::option::Option::None => #missing_type,
+                };
                 match type_str {
                     #(#arms)*
                     other => {

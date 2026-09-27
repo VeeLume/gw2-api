@@ -39,6 +39,16 @@ Cargo workspace with three crates:
 - Schema versioning: `?v=<ISO8601>` or `?v=latest`; pinned `2025-08-29T01:00:00.000Z`
 - Language: `?lang=en|de|es|fr|zh`
 
+### Known API bugs and quirks
+
+Before modelling around odd data, look for it in:
+- <https://github.com/gw2-api/issues/issues> — community tracker of API bugs (the best first stop)
+- <https://github.com/arenanet/api-cdi/issues> — the older ArenaNet tracker
+- the wiki page of the endpoint (`https://wiki.guildwars2.com/wiki/API:2/<path>`)
+
+Link the issue in a doc comment where the model handles the quirk (e.g. `AchievementBit::Blank`).
+Permanent data errors go into `patches/`; shape quirks go into the model.
+
 ## Macro System
 
 All endpoint types use the single unified `#[gw2_endpoint(...)]` macro. The old separate macros (`#[gw2_resource]`, `#[gw2_singleton]`, `#[gw2_collection_singleton]`, `#[gw2_namespace]`, `#[gw2_method]`) are removed and emit compile errors.
@@ -60,6 +70,8 @@ All endpoint types use the single unified `#[gw2_endpoint(...)]` macro. The old 
 | `no_accessor` | Suppress accessor generation. |
 | `no_trait` | Suppress trait impl generation. |
 | `also("path2", ...)` | Register additional paths pointing to the same struct. |
+
+`#[gw2_tagged_union]`: a JSON object without `"type"` is an error, unless one unit variant is marked `#[no_type]` (used for documented blank objects).
 
 On **async functions**: `#[gw2_endpoint(path = "...")]` attaches the fn to the endpoint struct inferred from the second-to-last path segment. Supports `test_params(key = expr)` for registry smoke tests.
 
