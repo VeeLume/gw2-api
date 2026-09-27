@@ -1,9 +1,10 @@
 //! `/v2/recipes` endpoint — types, IDs, and endpoint handle.
 
-use gw2_api_macros::{gw2_endpoint, gw2_enum};
+use gw2_api_macros::{gw2_endpoint, gw2_enum, gw2_tagged_union};
 use serde::{Deserialize, Serialize};
 
 use crate::common::CraftingDiscipline;
+use crate::endpoints::currencies::CurrencyId;
 use crate::endpoints::items::ItemId;
 use crate::error::Gw2ApiError;
 
@@ -30,10 +31,31 @@ pub struct Recipe {
 }
 
 /// An ingredient required for a recipe.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Ingredient {
-    pub id: ItemId,
-    pub count: u32,
+///
+/// Since schema 2022-03 an ingredient can be a currency (e.g. recipe 13513 needs
+/// 100 of currency 61) or a guild upgrade (guild decorations), not only an item.
+/// Serializes with a `"type"` field, like the API.
+#[gw2_tagged_union]
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "type")]
+pub enum Ingredient {
+    Item { id: ItemId, count: u32 },
+    Currency { id: CurrencyId, count: u32 },
+    /// A guild upgrade id (`/v2/guild/upgrades`, not modelled yet).
+    GuildUpgrade { id: u32, count: u32 },
+    Unknown { type_: String },
+}
+
+impl Ingredient {
+    /// How many are needed, `None` for an unrecognised ingredient type.
+    pub fn count(&self) -> Option<u32> {
+        match self {
+            Self::Item { count, .. } | Self::Currency { count, .. } | Self::GuildUpgrade { count, .. } => {
+                Some(*count)
+            }
+            Self::Unknown { .. } => None,
+        }
+    }
 }
 
 #[gw2_enum]
@@ -79,4 +101,23 @@ pub async fn output(
         .param("output", output.into())
         .send()
         .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ingredients_keep_their_type() {
+        let json = r#"{"id":13513,"type":"Consumable","output_item_id":1,"output_item_count":1,"time_to_craft_ms":0,"disciplines":["Chef"],"min_rating":0,"flags":[],
+            "ingredients":[{"type":"Item","id":19726,"count":2},{"type":"Currency","id":61,"count":100},{"type":"GuildUpgrade","id":279,"count":1}]}"#;
+        let r: Recipe = serde_json::from_str(json).unwrap();
+        assert!(matches!(r.ingredients[0], Ingredient::Item { ref id, count: 2 } if id.0 == 19726));
+        assert!(matches!(r.ingredients[1], Ingredient::Currency { ref id, count: 100 } if id.0 == 61));
+        assert!(matches!(r.ingredients[2], Ingredient::GuildUpgrade { id: 279, count: 1 }));
+        assert_eq!(
+            serde_json::to_value(&r.ingredients[1]).unwrap(),
+            serde_json::json!({"type": "Currency", "id": 61, "count": 100})
+        );
+    }
 }
