@@ -1,0 +1,70 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    // ── Tests ────────────────────────────────────────────────────────────────
+    {
+      "label": "test: all",
+      "detail": "Unit and wiremock tests. No live API.",
+      "type": "shell",
+      "command": "cargo test --workspace",
+      "group": { "kind": "test", "isDefault": true },
+      "presentation": { "reveal": "always", "panel": "shared" },
+      "problemMatcher": "$rustc"
+    },
+    {
+      "label": "test: verify patches",
+      "detail": "Hits the live GW2 API to confirm patch corrections are still valid. Requires network.",
+      "type": "shell",
+      "command": "cargo test -p gw2-api --features verify-patches -- --nocapture",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true },
+      "problemMatcher": "$rustc"
+    },
+    // ── CLI (reads GW2_API_KEY from .env for auth endpoints) ────────────────
+    {
+      "label": "cli: list endpoints (diff vs API manifest)",
+      "detail": "Fetch /v2.json and show which endpoints are implemented vs missing.",
+      "type": "shell",
+      "command": "cargo run -p gw2-api-cli -- list --diff",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true },
+      "problemMatcher": "$rustc"
+    },
+    {
+      "label": "cli: single test all endpoints",
+      "detail": "One representative call per endpoint through the full client stack. Fast.",
+      "type": "shell",
+      "command": "cargo run -p gw2-api-cli -- single --all --keep-going",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true },
+      "problemMatcher": "$rustc"
+    },
+    {
+      "label": "cli: full data fetch (all endpoints)",
+      "detail": "Fetch and deserialize every record through the typed client. Slow.",
+      "type": "shell",
+      "command": "cargo run -p gw2-api-cli -- full --all --concurrency 8",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true },
+      "problemMatcher": "$rustc"
+    },
+    {
+      "label": "cli: check all endpoints",
+      "detail": "Parse every raw item at the pinned and latest schema; report failures by id and ignored fields. Slow.",
+      "type": "shell",
+      "command": "cargo run -p gw2-api-cli -- check --all",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true },
+      "problemMatcher": "$rustc"
+    },
+    {
+      "label": "cli: check all endpoints, all languages",
+      "detail": "As above, in all 5 languages for localized routes. Very slow.",
+      "type": "shell",
+      "command": "cargo run -p gw2-api-cli -- check --all --all-langs",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true },
+      "problemMatcher": "$rustc"
+    }
+  ]
+}

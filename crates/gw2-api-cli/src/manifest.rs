@@ -1,77 +1,141 @@
 //! Fetch the live GW2 `/v2.json` manifest and compute coverage gaps.
 
+use std::collections::{BTreeMap, HashSet};
+
 use anyhow::Result;
+use gw2_api::registry::EndpointEntry;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
 struct Manifest {
-    routes: Vec<Route>,
+    #[serde(default)]
+    schema_versions: Vec<SchemaVersion>,
+    routes: Vec<RawRoute>,
 }
 
 #[derive(Deserialize)]
-struct Route {
+struct SchemaVersion {
+    v: String,
+    desc: String,
+}
+
+#[derive(Deserialize)]
+struct RawRoute {
     path: String,
     #[serde(default)]
     active: bool,
+    #[serde(default)]
+    lang: bool,
+    #[serde(default)]
+    auth: bool,
 }
 
-/// Fetches the live GW2 API manifest and returns the list of active path segments.
-///
-/// Each entry in the returned `Vec` is a path like `"items"` or `"account/wallet"`.
-pub async fn fetch_manifest() -> Result<Vec<String>> {
-    let url = "https://api.guildwars2.com/v2.json?v=latest";
-    let resp = reqwest::get(url).await?.error_for_status()?;
-    let manifest: Manifest = resp.json().await?;
+/// One active route of the live API.
+#[derive(Debug, Clone)]
+pub struct Route {
+    /// Without the `/v2/` prefix, e.g. `"items"` or `"characters/:id/backstory"`.
+    pub path: String,
+    /// Whether the route is localized (`?lang=` matters).
+    pub lang: bool,
+    pub auth: bool,
+}
 
-    // Keep only active routes and strip the leading "/v2/" prefix.
-    Ok(manifest
+/// The parts of `/v2.json` the CLI uses.
+pub struct LiveManifest {
+    pub routes: Vec<Route>,
+    /// Schema versions newer than `pinned`, as `(version, description)`.
+    pub newer_schemas: Vec<(String, String)>,
+}
+
+impl LiveManifest {
+    /// Routes keyed by path.
+    pub fn by_path(&self) -> BTreeMap<&str, &Route> {
+        self.routes.iter().map(|r| (r.path.as_str(), r)).collect()
+    }
+}
+
+/// Fetch the live manifest. `pinned` is the schema version to compare newer ones against.
+pub async fn fetch_manifest(pinned: &str) -> Result<LiveManifest> {
+    let url = "https://api.guildwars2.com/v2.json?v=latest";
+    let manifest: Manifest = reqwest::get(url).await?.error_for_status()?.json().await?;
+
+    let routes = manifest
         .routes
         .into_iter()
         .filter(|r| r.active)
-        .map(|r| {
-            r.path
-                .trim_start_matches('/')
-                .trim_start_matches("v2/")
-                .to_string()
+        .map(|r| Route {
+            path: r.path.trim_start_matches('/').trim_start_matches("v2/").to_string(),
+            lang: r.lang,
+            auth: r.auth,
         })
-        .collect())
+        .collect();
+    // ISO 8601 strings of the same shape compare correctly as strings.
+    let newer_schemas = manifest
+        .schema_versions
+        .into_iter()
+        .filter(|s| s.v.as_str() > pinned)
+        .map(|s| (s.v, s.desc))
+        .collect();
+    Ok(LiveManifest { routes, newer_schemas })
 }
 
-/// Computes which manifest paths are not in the implemented set, and vice versa.
+/// Coverage of the live manifest by the registry.
 pub struct CoverageDiff {
     /// Paths in the live manifest but not in the implemented registry.
-    pub missing: Vec<String>,
+    pub missing: Vec<Route>,
     /// Paths implemented but not found in the live manifest (stale or extra).
     pub extra: Vec<String>,
     /// Paths in both.
     pub covered: Vec<String>,
+    /// Implemented paths whose `auth` flag disagrees with the manifest:
+    /// `(path, registry_auth, manifest_auth)`.
+    pub auth_mismatch: Vec<(String, bool, bool)>,
 }
 
-pub fn compute_diff(manifest: &[String], implemented: &[&str]) -> CoverageDiff {
-    let impl_set: std::collections::HashSet<&str> =
-        implemented.iter().copied().collect();
-    let manifest_set: std::collections::HashSet<&str> =
-        manifest.iter().map(|s| s.as_str()).collect();
+/// A manifest path in registry form: `"items/:id"` → `"items"`.
+fn registry_path(manifest_path: &str) -> &str {
+    manifest_path.strip_suffix("/:id").unwrap_or(manifest_path)
+}
 
-    let missing = manifest
+/// The manifest lists some routes only by their parent: `commerce/transactions`
+/// stands for `commerce/transactions/current/buys` and its siblings. A registry
+/// path therefore matches a manifest path equal to it or to one of its ancestors.
+fn matches(registry: &str, manifest: &str) -> bool {
+    registry == manifest
+        || registry
+            .strip_prefix(manifest)
+            .is_some_and(|rest| rest.starts_with('/'))
+}
+
+pub fn compute_diff(manifest: &LiveManifest, implemented: &[&EndpointEntry]) -> CoverageDiff {
+    let impl_paths: HashSet<&str> = implemented.iter().map(|e| e.path).collect();
+    let manifest_paths: HashSet<&str> = manifest.routes.iter().map(|r| registry_path(&r.path)).collect();
+
+    let mut missing: Vec<Route> = manifest
+        .routes
         .iter()
-        .filter(|p| !impl_set.contains(p.as_str()))
+        .filter(|r| !impl_paths.iter().any(|p| matches(p, registry_path(&r.path))))
         .cloned()
         .collect();
+    missing.sort_by(|a, b| a.path.cmp(&b.path));
 
-    let mut extra: Vec<String> = impl_set
+    let (mut covered, mut extra): (Vec<String>, Vec<String>) = impl_paths
         .iter()
-        .filter(|&&p| !manifest_set.contains(p))
-        .map(|&p| p.to_string())
-        .collect();
+        .map(|p| p.to_string())
+        .partition(|p| manifest_paths.iter().any(|m| matches(p, m)));
+    covered.sort();
     extra.sort();
 
-    let mut covered: Vec<String> = impl_set
+    let by_path = manifest.by_path();
+    let mut auth_mismatch: Vec<(String, bool, bool)> = implemented
         .iter()
-        .filter(|&&p| manifest_set.contains(p))
-        .map(|&p| p.to_string())
+        .filter_map(|e| {
+            let route = by_path.get(e.path)?;
+            (route.auth != e.auth).then(|| (e.path.to_string(), e.auth, route.auth))
+        })
         .collect();
-    covered.sort();
+    auth_mismatch.sort();
+    auth_mismatch.dedup();
 
-    CoverageDiff { missing, extra, covered }
+    CoverageDiff { missing, extra, covered, auth_mismatch }
 }

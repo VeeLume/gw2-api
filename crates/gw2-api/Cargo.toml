@@ -19,6 +19,7 @@ async-stream = "0.3"
 base64 = "0.22"
 futures = "0.3"
 moka = { version = "0.12", features = ["future"] }
+serde_ignored = "0.1"
 
 [features]
 # Run live API calls to verify patch tables still match the GW2 API.

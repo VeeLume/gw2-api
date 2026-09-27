@@ -629,6 +629,10 @@ fn expand_endpoint_struct(
                 auth: #auth_bool,
                 type_name: #type_name_str,
                 call: #call_str,
+                check: ::std::option::Option::Some(::gw2_api::registry::CheckSpec {
+                    shape: ::gw2_api::registry::Shape::Array,
+                    parse: ::gw2_api::registry::parse_value::<#struct_name>,
+                }),
                 single: |unauth, auth| {
                     ::std::boxed::Box::pin(async move {
                         #single_body
@@ -707,11 +711,13 @@ fn expand_namespace_struct(
         let auth_bool = auth;
         // Use the endpoint struct name to get a unique static name per entry.
         let static_name = format_ident!("_ENDPOINT_{}", endpoint_name.to_string().to_uppercase());
+        // Request paths are relative to the base URL and need the leading slash.
+        let request_path = syn::LitStr::new(&format!("/{}", path_str.value()), path_str.span());
         let single_body: TokenStream2 = if auth_bool {
             quote! {
                 match auth {
                     ::std::option::Option::Some(client) => {
-                        client.request(#path_str).send::<::std::vec::Vec<::std::string::String>>().await
+                        client.request(#request_path).send::<::std::vec::Vec<::std::string::String>>().await
                             .map(|_| ())
                             .map_err(|e| ::std::format!("fetch: {e}"))
                     }
@@ -720,7 +726,7 @@ fn expand_namespace_struct(
             }
         } else {
             quote! {
-                unauth.request(#path_str).send::<::std::vec::Vec<::std::string::String>>().await
+                unauth.request(#request_path).send::<::std::vec::Vec<::std::string::String>>().await
                     .map(|_| ())
                     .map_err(|e| ::std::format!("fetch: {e}"))
             }
@@ -734,6 +740,7 @@ fn expand_namespace_struct(
                 auth: #auth_bool,
                 type_name: #handle_type_str,
                 call: #call_str,
+                check: ::std::option::Option::None,
                 single: |unauth, auth| {
                     ::std::boxed::Box::pin(async move {
                         #single_body
@@ -1004,6 +1011,10 @@ fn expand_resource_struct(
             auth: #auth,
             type_name: #type_name_str,
             call: #call_str,
+            check: ::std::option::Option::Some(::gw2_api::registry::CheckSpec {
+                    shape: ::gw2_api::registry::Shape::Bulk,
+                    parse: ::gw2_api::registry::parse_value::<#struct_name>,
+                }),
             single: |unauth, auth| {
                 ::std::boxed::Box::pin(async move {
                     #registry_single_client
@@ -1119,6 +1130,17 @@ fn expand_fixed_endpoint_struct(
         quote! { self.0.fetch_singleton::<#struct_name>().await }
     };
 
+    let check_shape = if collection {
+        quote! { ::gw2_api::registry::Shape::Array }
+    } else {
+        quote! { ::gw2_api::registry::Shape::One }
+    };
+    let check_spec = quote! {
+        ::gw2_api::registry::CheckSpec {
+            shape: #check_shape,
+            parse: ::gw2_api::registry::parse_value::<#struct_name>,
+        }
+    };
     let type_name_str = if collection {
         if nullable {
             format!("Vec<Option<{}>>", struct_name)
@@ -1347,6 +1369,7 @@ fn expand_fixed_endpoint_struct(
             auth: #auth_bool,
             type_name: #type_name_str,
             call: #call_str,
+            check: ::std::option::Option::Some(#check_spec),
             single: |unauth, auth| {
                 ::std::boxed::Box::pin(async move {
                     #single_body
@@ -1589,6 +1612,7 @@ fn expand_endpoint_fn(args: EndpointFnArgs, func: ItemFn) -> syn::Result<TokenSt
             auth: #auth_bool,
             type_name: #type_name_str,
             call: #call_sig_str,
+            check: ::std::option::Option::None,
             single: |unauth, auth| { #single_body },
             full: |unauth, auth| { #full_body },
         };

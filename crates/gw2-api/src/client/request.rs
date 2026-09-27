@@ -161,6 +161,23 @@ impl<S: AuthState> Gw2Client<S> {
         Err(Gw2ApiError::from_status(status, body))
     }
 
+    /// Fetch any API path as raw JSON, through the same rate limiter, retry, auth,
+    /// language and schema version as typed calls. Nothing is cached or patched.
+    ///
+    /// `path` is relative to the base URL and starts with `/`, e.g. `"/items"`.
+    /// Useful for tooling and for endpoints the crate does not model yet.
+    pub async fn get_raw(
+        &self,
+        path: &str,
+        query: &[(&'static str, String)],
+    ) -> Result<serde_json::Value, Gw2ApiError> {
+        let mut req = self.request(path);
+        for (k, v) in query {
+            req = req.param(k, v);
+        }
+        req.send().await
+    }
+
     /// Create a [`RequestBuilder`] for the given path.
     pub(crate) fn request(&self, path: impl Into<String>) -> RequestBuilder<'_, S> {
         RequestBuilder::new(self, path)

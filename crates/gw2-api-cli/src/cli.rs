@@ -60,4 +60,31 @@ pub enum Command {
         #[arg(long, default_value = "4")]
         concurrency: usize,
     },
+
+    /// Parse every raw item against the model, at the pinned and the `latest` schema.
+    ///
+    /// Reports parse failures per item id, fields the model ignores, and ids the
+    /// index lists but `?ids=` does not return. Exits 1 on failures at the pinned
+    /// schema; failures at `latest` only warn.
+    Check {
+        /// Only check this endpoint (exact path, e.g. "mounts/skins").
+        #[arg(long, conflicts_with = "all")]
+        endpoint: Option<String>,
+
+        /// Check all registered endpoints.
+        #[arg(long, conflicts_with = "endpoint")]
+        all: bool,
+
+        /// Skip the run at schema `latest`.
+        #[arg(long)]
+        pinned_only: bool,
+
+        /// Also check every other language, for routes the manifest marks as localized.
+        #[arg(long)]
+        all_langs: bool,
+
+        /// Show every ignored field instead of the first 10 per endpoint.
+        #[arg(long)]
+        verbose: bool,
+    },
 }
