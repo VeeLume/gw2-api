@@ -10,10 +10,12 @@ use crate::endpoints::items::ItemId;
 /// A GW2 mini-pet.
 #[gw2_endpoint(path = "minis", id_type = u32, paged, no_default_patch)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-// TODO: missing `unlock: Option<String>` (how to obtain; on 400 minis).
 pub struct Mini {
     pub id: MiniId,
     pub name: String,
+    /// How to obtain the mini, where the API says.
+    #[serde(default)]
+    pub unlock: Option<String>,
     pub icon: String,
     pub order: u32,
     #[serde(rename = "item_id")]

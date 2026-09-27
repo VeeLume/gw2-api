@@ -634,9 +634,11 @@ pub enum TrinketType {
 
 // ── Upgrade component ─────────────────────────────────────────────────────────
 
-// TODO: missing `attribute_adjustment` (undocumented, sent on all upgrade components).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpgradeComponentDetails {
+    /// Undocumented; sent on every upgrade component, always 0 as of 2026-09-27.
+    #[serde(default)]
+    pub attribute_adjustment: f64,
     #[serde(rename = "type")]
     pub upgrade_type: UpgradeComponentType,
     #[serde(default)]

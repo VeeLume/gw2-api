@@ -13,7 +13,6 @@ use crate::error::Gw2ApiError;
 /// A crafting recipe.
 #[gw2_endpoint(path = "recipes", id_type = u32, paged)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-// TODO: missing `chat_link` and `output_upgrade_id` (GuildUpgradeId, /v2/guild/upgrades).
 pub struct Recipe {
     pub id: RecipeId,
     #[serde(rename = "type")]
@@ -29,6 +28,11 @@ pub struct Recipe {
     pub flags: Vec<RecipeFlag>,
     #[serde(default)]
     pub ingredients: Vec<Ingredient>,
+    /// The guild upgrade a guild recipe produces (decorations, WvW consumables).
+    // TODO: GuildUpgradeId once /v2/guild/upgrades is modelled.
+    #[serde(default)]
+    pub output_upgrade_id: Option<u32>,
+    pub chat_link: String,
 }
 
 /// An ingredient required for a recipe.
@@ -178,7 +182,7 @@ mod tests {
 
     #[test]
     fn ingredients_keep_their_type() {
-        let json = r#"{"id":13513,"type":"Consumable","output_item_id":1,"output_item_count":1,"time_to_craft_ms":0,"disciplines":["Chef"],"min_rating":0,"flags":[],
+        let json = r#"{"id":13513,"type":"Consumable","output_item_id":1,"output_item_count":1,"time_to_craft_ms":0,"disciplines":["Chef"],"min_rating":0,"flags":[],"chat_link":"[&CQEAAAA=]",
             "ingredients":[{"type":"Item","id":19726,"count":2},{"type":"Currency","id":61,"count":100},{"type":"GuildUpgrade","id":279,"count":1}]}"#;
         let r: Recipe = serde_json::from_str(json).unwrap();
         assert!(matches!(r.ingredients[0], Ingredient::Item { ref id, count: 2 } if id.0 == 19726));

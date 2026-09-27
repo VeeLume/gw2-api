@@ -7,13 +7,16 @@
 //!   `"account/materials"`    → `MaterialsEndpoint`        (`account.materials()`)      (auth)
 //!   `"account/achievements"` → `AccountAchievementsEndpoint` (`account.achievements()`) (auth)
 
+use std::collections::HashMap;
+
 use chrono::{DateTime, Utc};
 use gw2_api_macros::{gw2_endpoint, gw2_enum};
 use serde::{Deserialize, Serialize};
 
 use crate::endpoints::achievements::AchievementId;
 use crate::endpoints::currencies::CurrencyId;
-use crate::endpoints::items::ItemId;
+use crate::endpoints::items::{AttributeType, ItemId};
+use crate::endpoints::itemstats::ItemStatId;
 use crate::endpoints::skins::SkinId;
 
 // ── Account singleton ─────────────────────────────────────────────────────────
@@ -89,6 +92,15 @@ pub enum AccountAccess {
     JanthirWilds,
 }
 
+/// Stats chosen on a selectable-stat item.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SelectedStats {
+    pub id: ItemStatId,
+    /// Attribute bonuses the stats give on this item.
+    #[serde(default)]
+    pub attributes: HashMap<AttributeType, f64>,
+}
+
 /// What an item in the bank or material storage is bound to.
 #[gw2_enum]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -112,8 +124,6 @@ pub struct WalletEntry {
 // path "account/bank" → BankEndpoint, account.bank()
 #[gw2_endpoint(path = "account/bank", auth, collection, nullable)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-// TODO: missing `upgrades`, `upgrade_slot_indices`, `infusions`, `stats { id, attributes }`,
-//       `dyes` (ColorId, /v2/colors) and `bound_to` (character name).
 pub struct BankSlot {
     pub id: ItemId,
     pub count: u32,
@@ -121,6 +131,25 @@ pub struct BankSlot {
     pub charges: Option<u32>,
     #[serde(default)]
     pub skin: Option<SkinId>,
+    /// Dyes applied to the item.
+    // TODO: Vec<ColorId> once /v2/colors is modelled.
+    #[serde(default)]
+    pub dyes: Option<Vec<u32>>,
+    /// Runes and sigils in the item.
+    #[serde(default)]
+    pub upgrades: Option<Vec<ItemId>>,
+    /// The upgrade slot each entry of `upgrades` sits in.
+    #[serde(default)]
+    pub upgrade_slot_indices: Option<Vec<u32>>,
+    #[serde(default)]
+    pub infusions: Option<Vec<ItemId>>,
+    /// The chosen stats of selectable-stat gear.
+    #[serde(default)]
+    pub stats: Option<SelectedStats>,
+    /// The character the item is soulbound to (with `binding: Character`).
+    // TODO: a character name type once /v2/characters is modelled.
+    #[serde(default)]
+    pub bound_to: Option<String>,
     #[serde(default)]
     pub binding: Option<Binding>,
 }
@@ -155,4 +184,23 @@ pub struct AccountAchievement {
     pub repeated: Option<u32>,
     #[serde(default)]
     pub unlocked: Option<bool>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bank_slot_with_upgrades_and_stats() {
+        let json = r#"{"id":30698,"count":1,"skin":4678,"dyes":[1,2],"upgrades":[24615,24599],
+            "upgrade_slot_indices":[0,1],"infusions":[49432],"binding":"Character","bound_to":"Hero",
+            "stats":{"id":161,"attributes":{"Power":251,"Precision":179,"CritDamage":179}}}"#;
+        let slot: BankSlot = serde_json::from_str(json).unwrap();
+        assert_eq!(slot.upgrades.unwrap().len(), 2);
+        let stats = slot.stats.unwrap();
+        assert_eq!(stats.id.0, 161);
+        assert_eq!(stats.attributes[&AttributeType::Power], 251.0);
+        assert_eq!(slot.binding, Some(Binding::Character));
+        assert_eq!(slot.bound_to.as_deref(), Some("Hero"));
+    }
 }

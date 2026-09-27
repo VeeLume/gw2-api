@@ -155,10 +155,10 @@ mod tests {
         let v = serde_json::json!({
             "id": 1, "name": "a", "description": "", "requirement": "", "locked_text": "",
             "type": "ItemSet", "flags": [], "tiers": [],
-            "bits": [{ "type": "Item", "id": 5, "text": "Fishing Hole: Any" }]
+            "bits": [{ "type": "Item", "id": 5, "new_bit_field": true }]
         });
         let ignored = parse_value::<crate::endpoints::achievements::Achievement>(v).unwrap();
-        assert_eq!(ignored, ["AchievementBit::Item.text"]);
+        assert_eq!(ignored, ["AchievementBit::Item.new_bit_field"]);
 
         // Item (custom Deserialize via Value) and its details.
         let v = serde_json::json!({
